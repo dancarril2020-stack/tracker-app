@@ -226,6 +226,11 @@ export default function DeliverySummary() {
                                             (SURPLUS <span style={{ fontSize: '0.9em' }}>x{Number(record.deliveredQuantity || 0) - Number(record.quantity)}</span>)
                                         </span>
                                     )}
+                                    {record.status === 'delivery_failed' && (
+                                        <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
+                                            (DELIVERY FAILED)
+                                        </span>
+                                    )}
                                     {record.auditHistory?.length > 0 && <span title="Edited" style={{ fontSize: '1rem' }}>📝</span>}
                                 </span>
                                 <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
@@ -235,6 +240,11 @@ export default function DeliverySummary() {
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                     <span style={{ color: '#f51519ff' }}>Notas:</span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
                                 </div>
+                                {record.status === 'delivery_failed' && record.failureReason && (
+                                    <div style={{ fontSize: '0.9rem', color: '#ef4444', marginTop: '0.2rem' }}>
+                                        <strong>Reason:</strong> {record.failureReason}
+                                    </div>
+                                )}
                                 {(userRole === 'office' || userRole === 'backoffice') && (
                                     <div style={{ fontSize: '0.8rem', color: 'var(--primary)', marginTop: '0.25rem' }}>
                                         Driver: {record.driverName}

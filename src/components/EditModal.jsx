@@ -155,6 +155,15 @@ export default function EditModal({ record, onClose, onUpdate }) {
                             <input name="quantity" value={formData.quantity} onChange={handleChange} />
                         </div>
                     </div>
+                    <div style={{ marginTop: '1rem' }}>
+                        <label className="label">Volumen/Missing/Damage</label>
+                        <input
+                            name="volumen"
+                            value={formData.volumen || ''}
+                            onChange={handleChange}
+                            placeholder="Add notes about volume, damage, or missing items"
+                        />
+                    </div>
 
                     {(record.type === 'delivery' || record.type === 'pickup' || record.type === 'load') && (
                         <div style={{ marginTop: '1rem' }}>

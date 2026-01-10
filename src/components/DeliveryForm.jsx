@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers } from '../firebase';
+import { logAction, ACTIONS } from '../utils/audit';
 
 import { useAuth } from '../contexts/AuthContext';
 
@@ -70,6 +71,44 @@ export default function DeliveryForm() {
         const { name, value } = e.target;
         if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
         setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    // Fail Modal State
+    const [failingLoad, setFailingLoad] = useState(null);
+    const [failureReason, setFailureReason] = useState('');
+
+    const handleFailClick = (e, load) => {
+        console.log("Fail Button Clicked", load); // DEBUG
+        e.stopPropagation();
+        setFailingLoad(load);
+        setFailureReason('');
+    };
+
+    const confirmFailDelivery = async () => {
+        if (!failureReason.trim()) {
+            alert("Please provide a reason.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // Update Load Record status to 'delivery_failed'
+            await updateDoc(doc(db, "records", failingLoad.id), {
+                status: 'delivery_failed',
+                failureReason: failureReason,
+                failedAt: new Date().toISOString()
+            });
+
+            // Log Audit
+            await logAction(currentUser, ACTIONS.DELIVERY_FAILED, `Delivery Failed for ${failingLoad.recipient}: ${failureReason}`, failingLoad.id);
+
+            setFailingLoad(null); // Close modal
+            fetchPendingLoads();
+        } catch (err) {
+            console.error("Error failing delivery:", err);
+            alert("Error: " + err.message);
+        }
+        setLoading(false);
     };
 
     const handleDeliverFromList = async (e, load) => {
@@ -258,6 +297,20 @@ export default function DeliveryForm() {
 
                                 <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
                                     <button
+                                        onClick={(e) => handleFailClick(e, record)}
+                                        style={{
+                                            padding: '0.3rem 1rem',
+                                            fontSize: '0.9rem',
+                                            background: 'transparent',
+                                            border: '1px solid #ef4444',
+                                            color: '#ef4444',
+                                            marginRight: '0.5rem',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Fail
+                                    </button>
+                                    <button
                                         onClick={(e) => handleDeliverFromList(e, record)}
                                         className="primary-button"
                                         style={{ padding: '0.3rem 1rem', fontSize: '0.9rem' }}
@@ -351,6 +404,44 @@ export default function DeliveryForm() {
                     {loading ? 'Saving...' : 'Register Delivery'}
                 </button>
             </form>
+
+            {failingLoad && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 1000, backdropFilter: 'blur(5px)'
+                }}>
+                    <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: '#18181b', border: '1px solid #ef4444' }}>
+                        <h3 style={{ color: '#ef4444', marginTop: 0 }}>Report Delivery Failure</h3>
+                        <p style={{ color: 'var(--text-muted)' }}>
+                            Recipient: <strong style={{ color: 'var(--text-main)' }}>{failingLoad.recipient}</strong>
+                        </p>
+                        <div style={{ margin: '1rem 0' }}>
+                            <label className="label">Reason for Failure</label>
+                            <textarea
+                                value={failureReason}
+                                onChange={(e) => setFailureReason(e.target.value)}
+                                placeholder="e.g. Business Closed, Customer Rejected..."
+                                style={{ width: '100%', minHeight: '80px', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '0.5rem' }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <button
+                                onClick={() => setFailingLoad(null)}
+                                style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '0.5rem' }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmFailDelivery}
+                                style={{ flex: 1, background: '#ef4444', border: 'none', color: 'white', padding: '0.5rem', fontWeight: 'bold' }}
+                            >
+                                Confirm Failure
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
