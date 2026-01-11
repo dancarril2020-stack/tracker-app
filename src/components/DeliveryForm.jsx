@@ -92,10 +92,47 @@ export default function DeliveryForm() {
 
         setLoading(true);
         try {
-            // Update Load Record status to 'delivery_failed'
-            await updateDoc(doc(db, "records", failingLoad.id), {
-                status: 'delivery_failed',
+            const today = new Date().toISOString().split('T')[0];
+
+            // 1. Create a NEW 'Delivery' record but with failed status (so it appears as a separate card/entry history)
+            // Using type 'delivery' so it might appear in delivery lists, but with status 'failed'.
+            // OR use type 'delivery_failed' if we filter by types. DeliverySummary currently filters: 
+            // loads = type 'load', deliveries = type 'delivery'. 
+            // If we want it to show up as a "Failed Delivery" card, we might need a type that the summary picks up OR adjust summary.
+            // Summary logic:
+            // loads = records.filter(r => r.type === 'load');
+            // deliveries = records.filter(r => r.type === 'delivery');
+
+            // If I change type to 'delivery_failed', I need to ensure Summary picks it up if I want it shown.
+            // Currently Summary only maps: records.map... 
+            // It displays ALL records fetched.
+            // Fetched records are: (office) all for date. (driver) all for date.
+
+            // So if I create a new record of type 'delivery_failed', it WILL be fetched and shown in the list.
+            // And the original LOAD will updated.
+
+            await addDoc(collection(db, "records"), {
+                type: 'delivery_failed', // Explicit type for clarity
+                driverId: currentUser.uid,
+                driverName: currentUser.name || currentUser.email,
+                recipient: failingLoad.recipient,
+                remittance: failingLoad.remittance,
+                quantity: failingLoad.quantity,
+                volumen: failingLoad.volumen || '',
+                reembolso: failingLoad.reembolso || '',
+                date: today,
+                createdAt: new Date().toISOString(),
+                status: 'failed',
                 failureReason: failureReason,
+                linkedLoadId: failingLoad.id
+            });
+
+            // 2. Update the Original Load Record
+            // We want it to be "removed" from the pending list (which queries status=='pending').
+            // We should mark it as 'processed_failed' or similar so it doesn't show up again as pending.
+            // Inherently, it shouldn't show up in the "Pending" list if status != pending.
+            await updateDoc(doc(db, "records", failingLoad.id), {
+                status: 'delivery_failed', // This removes it from pending list query
                 failedAt: new Date().toISOString()
             });
 
@@ -104,6 +141,7 @@ export default function DeliveryForm() {
 
             setFailingLoad(null); // Close modal
             fetchPendingLoads();
+            // Optional: User might want to be redirected or just see the list update.
         } catch (err) {
             console.error("Error failing delivery:", err);
             alert("Error: " + err.message);
@@ -320,6 +358,45 @@ export default function DeliveryForm() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                )}
+
+                {/* Fail Modal (duplicated for list mode legality or move outside conditional) */}
+                {failingLoad && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 1000, backdropFilter: 'blur(5px)'
+                    }}>
+                        <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: '#18181b', border: '1px solid #ef4444' }}>
+                            <h3 style={{ color: '#ef4444', marginTop: 0 }}>Report Delivery Failure</h3>
+                            <p style={{ color: 'var(--text-muted)' }}>
+                                Recipient: <strong style={{ color: 'var(--text-main)' }}>{failingLoad.recipient}</strong>
+                            </p>
+                            <div style={{ margin: '1rem 0' }}>
+                                <label className="label">Reason for Failure</label>
+                                <textarea
+                                    value={failureReason}
+                                    onChange={(e) => setFailureReason(e.target.value)}
+                                    placeholder="e.g. Business Closed, Customer Rejected..."
+                                    style={{ width: '100%', minHeight: '80px', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '0.5rem' }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button
+                                    onClick={() => setFailingLoad(null)}
+                                    style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '0.5rem' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmFailDelivery}
+                                    style={{ flex: 1, background: '#ef4444', border: 'none', color: 'white', padding: '0.5rem', fontWeight: 'bold' }}
+                                >
+                                    Confirm Failure
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

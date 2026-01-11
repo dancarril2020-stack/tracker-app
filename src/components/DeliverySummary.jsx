@@ -89,6 +89,7 @@ export default function DeliverySummary() {
         // Incident check: Separate Missing vs Surplus
         let pendingCount = 0;
         let surplusCount = 0;
+        let failedCount = 0;
 
         loads.forEach(load => {
             const loadedQty = Number(load.quantity || 0);
@@ -104,6 +105,12 @@ export default function DeliverySummary() {
             }
         });
 
+        // Also count explicitly created 'delivery_failed' records
+        const failedRecords = records.filter(r => r.type === 'delivery_failed');
+        failedRecords.forEach(f => {
+            failedCount += Number(f.quantity || 0);
+        });
+
 
         const sumQty = (arr) => arr.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
 
@@ -113,6 +120,7 @@ export default function DeliverySummary() {
             totalPickups: sumQty(pickups),
             pendingCount,
             surplusCount,
+            failedCount,
             reembolsoTotal: deliveries.reduce((acc, curr) => {
                 const val = parseFloat((curr.reembolso || "0").replace(',', '.'));
                 return acc + (isNaN(val) ? 0 : val);
@@ -171,11 +179,16 @@ export default function DeliverySummary() {
                             {metrics.surplusCount > 0 && (
                                 <span style={{ color: '#f59e0b' }}>+{metrics.surplusCount}</span>
                             )}
-                            {metrics.pendingCount === 0 && metrics.surplusCount === 0 && '0'}
+                            {metrics.failedCount > 0 && (
+                                <span style={{ color: '#ef4444', marginLeft: '0.5rem' }}>
+                                    (F: {metrics.failedCount})
+                                </span>
+                            )}
+                            {metrics.pendingCount === 0 && metrics.surplusCount === 0 && metrics.failedCount === 0 && '0'}
                         </div>
                         <div className="metric-label">
                             {metrics.surplusCount > 0 && metrics.pendingCount > 0 ? 'Incidents' :
-                                metrics.surplusCount > 0 ? 'Surplus' : 'Missing / Pending'}
+                                metrics.surplusCount > 0 ? 'Surplus' : 'Pending / Failed'}
                         </div>
                     </div>
                     <div className="metric-card">
@@ -198,7 +211,8 @@ export default function DeliverySummary() {
                 {records.map(record => (
                     <div key={record.id} className="card" style={{
                         borderLeft: `4px solid ${record.type === 'load' ? '#3b82f6' :
-                            record.type === 'delivery' ? '#22c55e' : '#f97316'
+                            record.type === 'delivery' ? '#22c55e' :
+                                record.type === 'delivery_failed' ? '#ef4444' : '#f97316'
                             }`
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -207,7 +221,7 @@ export default function DeliverySummary() {
                                     textTransform: 'uppercase',
                                     fontSize: '0.75rem',
                                     fontWeight: 'bold',
-                                    color: 'var(--text-muted)',
+                                    color: record.type === 'delivery_failed' ? '#ef4444' : 'var(--text-muted)',
                                     display: 'flex', alignItems: 'center', gap: '0.5rem'
                                 }}>
                                     {record.type}
@@ -228,23 +242,19 @@ export default function DeliverySummary() {
                                     )}
                                     {record.status === 'delivery_failed' && (
                                         <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
-                                            (DELIVERY FAILED)
+                                            {/*(DELIVERY FAILED)*/}
                                         </span>
                                     )}
-                                    {record.auditHistory?.length > 0 && <span title="Edited" style={{ fontSize: '1rem' }}>📝</span>}
+                                    {record.auditHistory?.length > 0 && <span title="Edited" style={{ fontSize: '1rem' }}>📝</span>}<span style={{ color: '#ef4444' }}>{record.failureReason || ''}</span>
                                 </span>
                                 <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                     Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
                                 </div>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                    <span style={{ color: '#f51519ff' }}>Notas:</span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
+                                    <span style={{ color: '#f51519ff' }}>Notas: </span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
                                 </div>
-                                {record.status === 'delivery_failed' && record.failureReason && (
-                                    <div style={{ fontSize: '0.9rem', color: '#ef4444', marginTop: '0.2rem' }}>
-                                        <strong>Reason:</strong> {record.failureReason}
-                                    </div>
-                                )}
+
                                 {(userRole === 'office' || userRole === 'backoffice') && (
                                     <div style={{ fontSize: '0.8rem', color: 'var(--primary)', marginTop: '0.25rem' }}>
                                         Driver: {record.driverName}
