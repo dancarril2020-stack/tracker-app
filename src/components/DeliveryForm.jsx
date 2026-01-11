@@ -78,7 +78,6 @@ export default function DeliveryForm() {
     const [failureReason, setFailureReason] = useState('');
 
     const handleFailClick = (e, load) => {
-        console.log("Fail Button Clicked", load); // DEBUG
         e.stopPropagation();
         setFailingLoad(load);
         setFailureReason('');
