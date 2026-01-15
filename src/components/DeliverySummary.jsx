@@ -16,6 +16,9 @@ export default function DeliverySummary() {
     const [drivers, setDrivers] = useState([]);
     const [selectedDriver, setSelectedDriver] = useState('all');
 
+    // Type Filter State (for clickable metrics)
+    const [selectedFilter, setSelectedFilter] = useState('all'); // 'all', 'loads', 'pending', 'delivered', 'pickups'
+
     useEffect(() => {
         async function fetchDrivers() {
             // Fetch Drivers on mount if user is office
@@ -167,11 +170,29 @@ export default function DeliverySummary() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-                    <div className="metric-card">
+                    <div
+                        className="metric-card"
+                        onClick={() => setSelectedFilter(selectedFilter === 'loads' ? 'all' : 'loads')}
+                        style={{
+                            cursor: 'pointer',
+                            border: selectedFilter === 'loads' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'loads' ? '0 0 12px var(--primary)' : 'none',
+                            transition: 'all 0.2s'
+                        }}
+                    >
                         <div className="metric-val">{metrics.totalLoads}</div>
                         <div className="metric-label">Loads</div>
                     </div>
-                    <div className="metric-card">
+                    <div
+                        className="metric-card"
+                        onClick={() => setSelectedFilter(selectedFilter === 'pending' ? 'all' : 'pending')}
+                        style={{
+                            cursor: 'pointer',
+                            border: selectedFilter === 'pending' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'pending' ? '0 0 12px var(--primary)' : 'none',
+                            transition: 'all 0.2s'
+                        }}
+                    >
                         <div className="metric-val">
                             {metrics.pendingCount > 0 && (
                                 <span style={{ color: '#ef4444' }}>{metrics.pendingCount}</span>
@@ -194,11 +215,29 @@ export default function DeliverySummary() {
                                 metrics.surplusCount > 0 ? 'Surplus' : 'Pending / Failed'}
                         </div>
                     </div>
-                    <div className="metric-card">
+                    <div
+                        className="metric-card"
+                        onClick={() => setSelectedFilter(selectedFilter === 'delivered' ? 'all' : 'delivered')}
+                        style={{
+                            cursor: 'pointer',
+                            border: selectedFilter === 'delivered' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'delivered' ? '0 0 12px var(--primary)' : 'none',
+                            transition: 'all 0.2s'
+                        }}
+                    >
                         <div className="metric-val">{metrics.totalDeliveries}</div>
                         <div className="metric-label">Delivered</div>
                     </div>
-                    <div className="metric-card">
+                    <div
+                        className="metric-card"
+                        onClick={() => setSelectedFilter(selectedFilter === 'pickups' ? 'all' : 'pickups')}
+                        style={{
+                            cursor: 'pointer',
+                            border: selectedFilter === 'pickups' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'pickups' ? '0 0 12px var(--primary)' : 'none',
+                            transition: 'all 0.2s'
+                        }}
+                    >
                         <div className="metric-val">{metrics.totalPickups}</div>
                         <div className="metric-label">Pick-ups</div>
                     </div>
@@ -211,7 +250,33 @@ export default function DeliverySummary() {
 
             {/* Record List */}
             <div style={{ display: 'grid', gap: '1rem' }}>
-                {records.map(record => (
+                {records.filter(record => {
+                    // Apply type filter based on selectedFilter
+                    if (selectedFilter === 'all') return true;
+
+                    if (selectedFilter === 'loads') {
+                        return record.type === 'load';
+                    }
+
+                    if (selectedFilter === 'pending') {
+                        return (
+                            (record.type === 'load' && record.status === 'pending') ||
+                            record.type === 'delivery_failed' ||
+                            (record.type === 'load' && record.status === 'incident_missing') ||
+                            (record.type === 'load' && record.status === 'incident_excess')
+                        );
+                    }
+
+                    if (selectedFilter === 'delivered') {
+                        return record.type === 'delivery';
+                    }
+
+                    if (selectedFilter === 'pickups') {
+                        return record.type === 'pickup';
+                    }
+
+                    return true;
+                }).map(record => (
                     <div key={record.id} className="card" style={{
                         borderLeft: `4px solid ${record.type === 'load' ? '#3b82f6' :
                             record.type === 'delivery' ? '#22c55e' :
