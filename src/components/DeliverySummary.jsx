@@ -17,11 +17,14 @@ export default function DeliverySummary() {
     const [selectedDriver, setSelectedDriver] = useState('all');
 
     useEffect(() => {
-        // Fetch Drivers on mount if user is office
-        if (userRole === 'office' || userRole === 'backoffice') {
-            const allUsers = getUsers();
-            setDrivers(allUsers.filter(u => u.role === 'driver'));
+        async function fetchDrivers() {
+            // Fetch Drivers on mount if user is office
+            if (userRole === 'office' || userRole === 'backoffice') {
+                const allUsers = await getUsers();
+                setDrivers(allUsers.filter(u => u.role === 'driver'));
+            }
         }
+        fetchDrivers();
     }, [userRole]);
 
     useEffect(() => {

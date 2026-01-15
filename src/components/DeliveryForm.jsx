@@ -25,17 +25,20 @@ export default function DeliveryForm() {
     const [selectedDriver, setSelectedDriver] = useState('');
 
     React.useEffect(() => {
-        if (userRole === 'office' || userRole === 'backoffice') {
-            const allUsers = getUsers();
-            const driverList = allUsers.filter(u => u.role === 'driver');
-            setDrivers(driverList);
-            if (driverList.length > 0) {
-                setSelectedDriver(driverList[0].uid);
+        async function fetchDrivers() {
+            if (userRole === 'office' || userRole === 'backoffice') {
+                const allUsers = await getUsers();
+                const driverList = allUsers.filter(u => u.role === 'driver');
+                setDrivers(driverList);
+                if (driverList.length > 0) {
+                    setSelectedDriver(driverList[0].uid);
+                }
+            } else {
+                // If driver, always themselves
+                setSelectedDriver(currentUser.uid);
             }
-        } else {
-            // If driver, always themselves
-            setSelectedDriver(currentUser.uid);
         }
+        fetchDrivers();
     }, [userRole, currentUser]);
 
     // Initial Fetch for List Mode

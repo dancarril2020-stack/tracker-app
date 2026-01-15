@@ -12,26 +12,37 @@ export default function UserManagement() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
+    const [loading, setLoading] = useState(false);
+
     useEffect(() => {
         loadUsers();
     }, []);
 
-    function loadUsers() {
-        setUsers(getUsers());
+    async function loadUsers() {
+        try {
+            const userList = await getUsers();
+            setUsers(userList);
+        } catch (err) {
+            console.error("Error loading users:", err);
+            setError("Failed to load users.");
+        }
     }
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
         setError('');
         setSuccess('');
+        setLoading(true);
 
         try {
-            registerUser(formData.email, formData.password, formData.role, formData.name);
+            await registerUser(formData.email, formData.password, formData.role, formData.name);
             setSuccess(`User ${formData.name} created successfully!`);
             setFormData({ ...formData, name: '', email: '' }); // Reset fields
-            loadUsers(); // Refresh list
+            await loadUsers(); // Refresh list
         } catch (err) {
             setError(err.message);
+        } finally {
+            setLoading(false);
         }
     }
 
