@@ -16,6 +16,10 @@ export default function DeliverySummary() {
     const [drivers, setDrivers] = useState([]);
     const [selectedDriver, setSelectedDriver] = useState('all');
 
+    // Search State
+    const [searchTerm, setSearchTerm] = useState('');
+
+
     // Type Filter State (for clickable metrics)
     const [selectedFilter, setSelectedFilter] = useState('all'); // 'all', 'loads', 'pending', 'delivered', 'pickups'
 
@@ -169,6 +173,17 @@ export default function DeliverySummary() {
                     </div>
                 </div>
 
+                {/* Search Bar */}
+                <div style={{ marginBottom: '1rem' }}>
+                    <input
+                        type="text"
+                        placeholder="Search by customer/recipient..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '1rem' }}
+                    />
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
                     <div
                         className="metric-card"
@@ -251,7 +266,14 @@ export default function DeliverySummary() {
             {/* Record List */}
             <div style={{ display: 'grid', gap: '1rem' }}>
                 {records.filter(record => {
-                    // Apply type filter based on selectedFilter
+                    // 1. Search Filter
+                    if (searchTerm) {
+                        const term = searchTerm.toLowerCase().trim();
+                        const recipient = (record.recipient || '').toLowerCase();
+                        if (!recipient.includes(term)) return false;
+                    }
+
+                    // 2. Type Filter based on selectedFilter
                     if (selectedFilter === 'all') return true;
 
                     if (selectedFilter === 'loads') {

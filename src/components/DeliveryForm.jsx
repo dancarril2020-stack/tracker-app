@@ -24,6 +24,9 @@ export default function DeliveryForm() {
     const [drivers, setDrivers] = useState([]);
     const [selectedDriver, setSelectedDriver] = useState('');
 
+    // Search State
+    const [searchTerm, setSearchTerm] = useState('');
+
     React.useEffect(() => {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
@@ -286,6 +289,17 @@ export default function DeliveryForm() {
                     </button>
                 </div>
 
+                {/* Search Bar */}
+                <div style={{ marginBottom: '1rem' }}>
+                    <input
+                        type="text"
+                        placeholder="Search by customer..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '1rem' }}
+                    />
+                </div>
+
                 {pendingLoads.length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                         No pending loads found to deliver.
@@ -296,7 +310,10 @@ export default function DeliveryForm() {
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gap: '1rem' }}>
-                        {pendingLoads.map(record => (
+                        {pendingLoads.filter(record => {
+                            if (!searchTerm) return true;
+                            return (record.recipient || '').toLowerCase().includes(searchTerm.toLowerCase().trim());
+                        }).map(record => (
                             <div key={record.id} className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                     <div>
