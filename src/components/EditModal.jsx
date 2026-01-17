@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { db, doc, updateDoc, arrayUnion, query, collection, where, getDocs } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 
@@ -8,6 +9,17 @@ export default function EditModal({ record, onClose, onUpdate }) {
     const { currentUser } = useAuth();
     const [formData, setFormData] = useState({ ...record });
     const [loading, setLoading] = useState(false);
+
+    // Lock body scroll when modal is open and ensure it's visible
+    useEffect(() => {
+        // Prevent body scroll
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+        };
+    }, []);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -132,7 +144,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
         setLoading(false);
     };
 
-    return (
+    return ReactDOM.createPortal(
         <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -187,6 +199,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
                     </div>
                 </form>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
