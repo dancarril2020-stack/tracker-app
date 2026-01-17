@@ -21,7 +21,8 @@ import {
     orderBy,
     limit,
     arrayUnion,
-    Timestamp
+    Timestamp,
+    onSnapshot
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -103,7 +104,8 @@ export {
     orderBy,
     limit,
     arrayUnion,
-    Timestamp
+    Timestamp,
+    onSnapshot
 };
 
 export default {};

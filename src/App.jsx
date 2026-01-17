@@ -1,23 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { db, collection, query, where, onSnapshot } from './firebase'; // Added imports
 import LoginScreen from './components/LoginScreen';
 import DeliveryForm from './components/DeliveryForm';
 import LoadingTab from './components/LoadingTab';
 import PickupTab from './components/PickupTab';
-// We will update Summary later, keeping import for now or temporary comment
 import DeliverySummary from './components/DeliverySummary';
 import logo from './assets/logo.png';
 
 import UserManagement from './components/UserManagement';
-import AuditTab from './components/AuditTab'; // Import added 
+import AuditTab from './components/AuditTab';
 import ThemeToggle from './components/ThemeToggle';
 
 function AuthenticatedApp() {
   const { currentUser, userRole, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('loading');
 
-  React.useEffect(() => {
+  // --- BADGE STATE ---
+  const [badges, setBadges] = useState({ deliveries: 0, pickups: 0 });
+
+  useEffect(() => {
     if (userRole === 'office' || userRole === 'backoffice') {
       setActiveTab('summary');
     } else if (userRole === 'driver') {
@@ -25,7 +28,74 @@ function AuthenticatedApp() {
     }
   }, [userRole]);
 
+  // --- BADGE LISTENER (DRIVER ONLY) ---
+  useEffect(() => {
+    if (userRole !== 'driver' || !currentUser) {
+      setBadges({ deliveries: 0, pickups: 0 });
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // 1. Listen for Pending Loads (Badge for 'Deliveries' tab)
+    const qLoads = query(
+      collection(db, "records"),
+      where("driverId", "==", currentUser.uid),
+      where("date", "==", today),
+      where("type", "==", "load"),
+      where("status", "==", "pending")
+    );
+
+    // 2. Listen for Assigned Pickups (Badge for 'Pick-ups' tab)
+    const qPickups = query(
+      collection(db, "records"),
+      where("driverId", "==", currentUser.uid),
+      where("type", "==", "pickup"),
+      where("status", "==", "assigned")
+    );
+
+    const unsubLoads = onSnapshot(qLoads, (snapshot) => {
+      setBadges(prev => ({ ...prev, deliveries: snapshot.size }));
+    });
+
+    const unsubPickups = onSnapshot(qPickups, (snapshot) => {
+      setBadges(prev => ({ ...prev, pickups: snapshot.size }));
+    });
+
+    return () => {
+      unsubLoads();
+      unsubPickups();
+    };
+  }, [userRole, currentUser]);
+
+
   if (!currentUser) return <LoginScreen />;
+
+  // Badge Component
+  const Badge = ({ count }) => {
+    if (count <= 0) return null;
+    return (
+      <span style={{
+        position: 'absolute',
+        top: '-5px',
+        right: '-5px',
+        background: '#ef4444',
+        color: 'white',
+        borderRadius: '50%',
+        minWidth: '18px',
+        height: '18px',
+        fontSize: '0.75rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: 'bold',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+        zIndex: 10
+      }}>
+        {count}
+      </span>
+    );
+  };
 
   return (
     <>
@@ -55,14 +125,18 @@ function AuthenticatedApp() {
         <button
           className={`tab-button ${activeTab === 'delivery' ? 'active' : ''}`}
           onClick={() => setActiveTab('delivery')}
+          style={{ position: 'relative', overflow: 'visible' }} // Allow badge overflow
         >
           Deliveries
+          <Badge count={badges.deliveries} />
         </button>
         <button
           className={`tab-button ${activeTab === 'pickup' ? 'active' : ''}`}
           onClick={() => setActiveTab('pickup')}
+          style={{ position: 'relative', overflow: 'visible' }}
         >
           Pick-ups
+          <Badge count={badges.pickups} />
         </button>
         <button
           className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}

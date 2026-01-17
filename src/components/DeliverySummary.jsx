@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsers } from '../firebase';
+import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsers, updateDoc } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 
 import { useAuth } from '../contexts/AuthContext';
@@ -73,6 +73,61 @@ export default function DeliverySummary() {
         }
         setLoading(false);
     }
+
+    // Delete Logic
+    const handleDelete = async (record) => {
+        if (!window.confirm("Are you sure you want to PERMANENTLY DELETE this record?")) return;
+
+        try {
+            // 1. Revert Load Status if deleting a Delivery
+            if (record.type === 'delivery') {
+                const q = query(
+                    collection(db, "records"),
+                    where("type", "==", "load"),
+                    where("remittance", "==", record.remittance),
+                    where("recipient", "==", record.recipient)
+                    // We don't filter by date strictly as load might be from previous day, 
+                    // but typically we are looking for the active load.
+                );
+                const snapshot = await getDocs(q);
+
+                for (const docSnap of snapshot.docs) {
+                    const load = docSnap.data();
+                    const currentDelivered = Number(load.deliveredQuantity || 0);
+                    const quantityRestored = Number(record.quantity || 0);
+
+                    let newDelivered = currentDelivered - quantityRestored;
+                    if (newDelivered < 0) newDelivered = 0;
+
+                    let newStatus = 'pending';
+                    if (newDelivered > 0 && newDelivered < Number(load.quantity)) {
+                        newStatus = 'incident_missing';
+                    } else if (newDelivered >= Number(load.quantity)) {
+                        // Should not happen unless there are other deliveries, but keep it safe
+                        newStatus = 'delivered';
+                    }
+
+                    await updateDoc(doc(db, "records", docSnap.id), {
+                        deliveredQuantity: newDelivered,
+                        status: newStatus,
+                        linkedDeliveryTime: null // Clear link if full revert? Or keep last? Safe to clear or just leave.
+                    });
+                }
+            }
+
+            // 2. Delete the Record
+            await deleteDoc(doc(db, "records", record.id));
+
+            // 3. Log Audit
+            const actionType = record.type === 'load' ? ACTIONS.DELETE_LOAD : ACTIONS.DELETE_DELIVERY;
+            await logAction(currentUser, actionType, `Deleted ${record.type} record for ${record.recipient}`, record.id);
+
+            fetchRecords();
+        } catch (err) {
+            console.error(err);
+            alert("Error deleting: " + err.message);
+        }
+    };
 
     // Edit Rules:
     const canEdit = (record) => {
@@ -315,6 +370,16 @@ export default function DeliverySummary() {
                                     display: 'flex', alignItems: 'center', gap: '0.5rem'
                                 }}>
                                     {record.type}
+                                    {record.type === 'pickup' && record.status === 'assigned' && (
+                                        <span style={{ color: '#f59e0b', marginLeft: '0.5rem' }}>
+                                            - ASSIGNED
+                                        </span>
+                                    )}
+                                    {record.type === 'pickup' && record.status !== 'assigned' && (
+                                        <span style={{ color: '#22c55e', marginLeft: '0.5rem' }}>
+                                            - PICK-UP DONE
+                                        </span>
+                                    )}
                                     {record.status === 'pending' && (
                                         <span style={{ color: '#ef4444' }}>
                                             (PENDING <span style={{ fontSize: '0.9em' }}>x{record.quantity}</span>)
@@ -369,21 +434,7 @@ export default function DeliverySummary() {
                             <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                                 {(userRole === 'office' || userRole === 'backoffice') && (
                                     <button
-                                        onClick={async () => {
-                                            if (window.confirm("Are you sure you want to PERMANENTLY DELETE this record?")) {
-                                                try {
-                                                    await deleteDoc(doc(db, "records", record.id));
-
-                                                    // LOG AUDIT
-                                                    const actionType = record.type === 'load' ? ACTIONS.DELETE_LOAD : ACTIONS.DELETE_DELIVERY;
-                                                    await logAction(currentUser, actionType, `Deleted ${record.type} record for ${record.recipient}`, record.id);
-
-                                                    fetchRecords();
-                                                } catch (err) {
-                                                    alert("Error deleting: " + err.message);
-                                                }
-                                            }
-                                        }}
+                                        onClick={() => handleDelete(record)}
                                         style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid #ef4444', color: '#ef4444' }}
                                     >
                                         Delete
