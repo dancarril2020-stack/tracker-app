@@ -71,8 +71,8 @@ export default function LoadingTab({ onCompleteLoad }) {
                 where("driverId", "==", targetDriverId),
                 where("date", "==", today),
                 where("type", "==", "load"),
-                where("recipient", "==", formData.recipient),
-                where("remittance", "==", formData.remittance),
+                where("recipient", "==", formData.recipient.toLowerCase()),
+                where("remittance", "==", formData.remittance.toLowerCase()),
                 where("status", "==", "pending")
             );
 
