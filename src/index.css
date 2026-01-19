@@ -18,7 +18,7 @@
 }
 
 [data-theme='light'] {
-  --background: #f1f5f9;
+  --background: #f0ecec;
   /* Slate 100 */
   --surface: rgba(255, 255, 255, 0.9);
   --text-main: #0f172a;
@@ -27,7 +27,7 @@
   /* Slate 500 */
   --border: #e2e8f0;
   /* Slate 200 */
-  --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --glass-shadow: 0 4px 6px -1px rgba(225, 216, 216, 0.1), 0 2px 4px -1px rgba(240, 232, 232, 0.06);
   --input-bg: #ffffff;
 }
 
@@ -35,9 +35,7 @@ body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--background);
-  background-image:
-    radial-gradient(at 0% 0%, hsla(27, 96%, 10%, 1) 0, transparent 50%),
-    radial-gradient(at 100% 0%, hsla(0, 0%, 10%, 1) 0, transparent 50%);
+
   color: var(--text-main);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -64,7 +62,7 @@ button {
   font-weight: 500;
   font-family: inherit;
   background-color: var(--primary);
-  color: white;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.25s;
 }
