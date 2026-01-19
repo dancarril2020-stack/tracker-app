@@ -245,12 +245,12 @@ export default function DeliverySummary() {
                         onClick={() => setSelectedFilter(selectedFilter === 'loads' ? 'all' : 'loads')}
                         style={{
                             cursor: 'pointer',
-                            border: selectedFilter === 'loads' ? '2px solid var(--primary)' : '1px solid var(--border)',
-                            boxShadow: selectedFilter === 'loads' ? '0 0 12px var(--primary)' : 'none',
+                            border: selectedFilter === 'loads' ? '2px solid rgb(59, 130, 246)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'loads' ? '0 0 12px rgb(59, 130, 246)' : 'none',
                             transition: 'all 0.2s'
                         }}
                     >
-                        <div className="metric-val">{metrics.totalLoads}</div>
+                        <div className="metric-val" style={{ color: 'rgb(59, 130, 246)' }}>{metrics.totalLoads}</div>
                         <div className="metric-label">Loads</div>
                     </div>
                     <div
@@ -258,8 +258,8 @@ export default function DeliverySummary() {
                         onClick={() => setSelectedFilter(selectedFilter === 'pending' ? 'all' : 'pending')}
                         style={{
                             cursor: 'pointer',
-                            border: selectedFilter === 'pending' ? '2px solid var(--primary)' : '1px solid var(--border)',
-                            boxShadow: selectedFilter === 'pending' ? '0 0 12px var(--primary)' : 'none',
+                            border: selectedFilter === 'pending' ? '2px solid rgb(239, 68, 68)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'pending' ? '0 0 12px rgb(239, 68, 68)' : 'none',
                             transition: 'all 0.2s'
                         }}
                     >
@@ -290,12 +290,12 @@ export default function DeliverySummary() {
                         onClick={() => setSelectedFilter(selectedFilter === 'delivered' ? 'all' : 'delivered')}
                         style={{
                             cursor: 'pointer',
-                            border: selectedFilter === 'delivered' ? '2px solid var(--primary)' : '1px solid var(--border)',
-                            boxShadow: selectedFilter === 'delivered' ? '0 0 12px var(--primary)' : 'none',
+                            border: selectedFilter === 'delivered' ? '2px solid rgb(34, 197, 94)' : '1px solid var(--border)',
+                            boxShadow: selectedFilter === 'delivered' ? '0 0 12px rgb(34, 197, 94)' : 'none',
                             transition: 'all 0.2s'
                         }}
                     >
-                        <div className="metric-val">{metrics.totalDeliveries}</div>
+                        <div className="metric-val" style={{ color: 'rgb(34, 197, 94)' }}>{metrics.totalDeliveries}</div>
                         <div className="metric-label">Delivered</div>
                     </div>
                     <div
