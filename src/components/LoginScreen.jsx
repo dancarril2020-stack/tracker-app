@@ -71,6 +71,7 @@ export default function LoginScreen() {
                             required
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
+                            placeholder="********"
                         />
                     </div>
 
