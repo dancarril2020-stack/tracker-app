@@ -81,7 +81,7 @@ export default function UserManagement() {
                         <select
                             value={formData.role}
                             onChange={e => setFormData({ ...formData, role: e.target.value })}
-                            style={{ padding: '0.8rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                            style={{ padding: '0.8rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)' }}
                         >
                             <option value="driver">Driver</option>
                             <option value="office">Office</option>
@@ -96,10 +96,10 @@ export default function UserManagement() {
                         Create User
                     </button>
                 </form>
-            </div>
+            </div >
 
             {/* User List */}
-            <div className="glass-panel">
+            < div className="glass-panel" >
                 <h3 style={{ marginTop: 0 }}>Existing Users</h3>
                 <div style={{ display: 'grid', gap: '0.8rem' }}>
                     {users.map((user, idx) => (
@@ -128,7 +128,7 @@ export default function UserManagement() {
                         </div>
                     ))}
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
