@@ -186,8 +186,10 @@ export default function DeliverySummary() {
             pendingCount,
             surplusCount,
             failedCount,
-            reembolsoTotal: deliveries.reduce((acc, curr) => {
-                const val = parseFloat((curr.reembolso || "0").replace(',', '.'));
+            reembolsoTotal: [...deliveries, ...pickups].reduce((acc, curr) => {
+                // Use collectedValue if present (actual collection), otherwise fallback to reembolso (expected/manual)
+                const valStr = (curr.collectedValue || curr.reembolso || "0").toString();
+                const val = parseFloat(valStr.replace(',', '.'));
                 return acc + (isNaN(val) ? 0 : val);
             }, 0).toFixed(2)
         };

@@ -99,8 +99,17 @@ export default function PickupTab() {
     };
 
     // --- DRIVER: HANDLE PROCESS ASSIGNMENT ---
+    // --- DRIVER: HANDLE PROCESS ASSIGNMENT ---
     const handleProcessPickup = async (pickup) => {
-        if (!window.confirm(`Register pickup from ${pickup.recipient}?`)) return;
+        // Validation / Prompt for Reembolso
+        let collectedValue = '';
+        if (pickup.reembolso && pickup.reembolso !== '0') {
+            const input = window.prompt(`Enter collected reimbursement for ${pickup.recipient} (Expected: €${pickup.reembolso}). Leave empty if not collected.`);
+            if (input === null) return; // User cancelled
+            collectedValue = input.trim();
+        } else {
+            if (!window.confirm(`Register pickup from ${pickup.recipient}?`)) return;
+        }
 
         setLoading(true);
         try {
@@ -108,7 +117,9 @@ export default function PickupTab() {
             await updateDoc(recordRef, {
                 status: 'completed_pickup', // Mark as done so it shows in summary but leaves this list
                 completedAt: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0] // Update date to actual pickup date if different
+                date: new Date().toISOString().split('T')[0], // Update date to actual pickup date if different
+                collectedValue: collectedValue || '', // Save collected value
+                expectedReembolso: pickup.reembolso || '' // Ensure expected is saved if not already
             });
             fetchAssignedPickups(); // Refresh list
         } catch (err) {
@@ -135,6 +146,8 @@ export default function PickupTab() {
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
+                collectedValue: manualData.reembolso || '', // Manual entry implies collected
+                expectedReembolso: manualData.reembolso || '',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
             });
@@ -249,8 +262,18 @@ export default function PickupTab() {
                                     <div style={{ textAlign: 'right' }}>
                                         <div style={{ fontWeight: 'bold' }}>x{pickup.quantity || '-'}</div>
                                         <span style={{ fontSize: '0.75rem', background: '#f59e0b', color: 'black', padding: '2px 6px', borderRadius: '4px' }}>ASSIGNED</span>
+                                        <div style={{ textAlign: 'right' }}>
+
+                                            {pickup.reembolso && (
+                                                <div style={{ marginTop: '0.5rem', color: (pickup.type === 'delivery' && (pickup.collectedValue ? pickup.collectedValue !== '0' : pickup.reembolso !== '0')) ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
+                                                    € {pickup.reembolso}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
+
+
                                 <div style={{ marginTop: '1rem', textAlign: 'right' }}>
                                     <button
                                         onClick={() => handleProcessPickup(pickup)}
@@ -263,8 +286,9 @@ export default function PickupTab() {
                             </div>
                         ))}
                     </div>
-                )}
-            </div>
+                )
+                }
+            </div >
         );
     }
 
