@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsers, updateDoc } from '../firebase';
+import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsers, updateDoc, setDoc } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
+import { generateCSV, parseCSV } from '../utils/csvHelper'; // Import CSV helper
 
 import { useAuth } from '../contexts/AuthContext';
 import EditModal from './EditModal';
@@ -129,6 +130,70 @@ export default function DeliverySummary() {
         }
     };
 
+
+    // --- EXPORT / IMPORT LOGIC ---
+    const handleExport = () => {
+        if (!records || records.length === 0) {
+            alert("No records to export.");
+            return;
+        }
+        const csvContent = generateCSV(records);
+        const blobs = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blobs);
+
+        link.setAttribute("href", url);
+        link.setAttribute("download", `tvr_data_${summaryDate}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!window.confirm("WARNING: Importing data will OVERWRITE existing records with the same ID. Are you sure?")) {
+            e.target.value = ''; // Reset input
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            const text = evt.target.result;
+            try {
+                const parsedRecords = parseCSV(text);
+                if (parsedRecords.length === 0) {
+                    alert("No valid records found in file.");
+                    return;
+                }
+
+                setLoading(true);
+                let count = 0;
+                for (const record of parsedRecords) {
+                    if (record.id) {
+                        // Ensure we restore to the 'records' collection
+                        // Convert empty strings for numbers if necessary, but string is usually safe for storage if app handles checks
+                        // Ideally we should sanitize/validate date? Assuming trusted source.
+                        const docRef = doc(db, "records", record.id);
+                        await setDoc(docRef, record, { merge: true });
+                        count++;
+                    }
+                }
+                alert(`Successfully imported ${count} records.`);
+                fetchRecords(); // Refresh view
+            } catch (err) {
+                console.error(err);
+                alert("Error importing file: " + err.message);
+            } finally {
+                setLoading(false);
+                e.target.value = ''; // Reset
+            }
+        };
+        reader.readAsText(file);
+    };
+
     // Edit Rules:
     const canEdit = (record) => {
         if (userRole === 'backoffice') return false;
@@ -228,6 +293,28 @@ export default function DeliverySummary() {
                             style={{ width: 'auto' }}
                         />
                     </div>
+
+                    {/* EXPORT / IMPORT ACTIONS (Office Only) */}
+                    {(userRole === 'office' || userRole === 'backoffice') && (
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={handleExport}
+                                className="secondary-button"
+                                style={{ fontSize: '0.7rem', padding: '0.4rem 0.8rem', backgroundColor: 'white' }}
+                            >
+                                ⬇️ Export CSV
+                            </button>
+                            <label className="secondary-button" style={{ fontSize: '0.7rem', padding: '0.4rem 0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                ⬆️ Import CSV
+                                <input
+                                    type="file"
+                                    accept=".csv"
+                                    onChange={handleImport}
+                                    style={{ display: 'none' }}
+                                />
+                            </label>
+                        </div>
+                    )}
                 </div>
 
                 {/* Search Bar */}
