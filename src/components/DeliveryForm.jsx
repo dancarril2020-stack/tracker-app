@@ -482,7 +482,7 @@ export default function DeliveryForm() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div style={{ textAlign: 'left' }}>
-                        <label className="label">Reembolso (Only Numbers/Comma)</label>
+                        <label className="label">Reembolso (Numbers/Comma)</label>
                         <input
                             name="reembolso"
                             value={formData.reembolso}
@@ -491,7 +491,7 @@ export default function DeliveryForm() {
                         />
                     </div>
                     <div style={{ textAlign: 'left' }}>
-                        <label className="label">Volumen/Missing/Damage</label>
+                        <label className="label">Volumen/Missing/etc</label>
                         <input name="volumen" value={formData.volumen} onChange={handleChange} />
                     </div>
                 </div>
