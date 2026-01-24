@@ -6,7 +6,7 @@ export default function UserManagement() {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
-        password: 'password', // Default mock password
+        password: '',
         role: 'driver'
     });
     const [error, setError] = useState('');
@@ -37,7 +37,7 @@ export default function UserManagement() {
         try {
             await registerUser(formData.email, formData.password, formData.role, formData.name);
             setSuccess(`User ${formData.name} created successfully!`);
-            setFormData({ ...formData, name: '', email: '' }); // Reset fields
+            setFormData({ ...formData, name: '', email: '', password: '' }); // Reset fields
             await loadUsers(); // Refresh list
         } catch (err) {
             setError(err.message);
@@ -73,6 +73,18 @@ export default function UserManagement() {
                             placeholder="e.g. john@tvr.com"
                             value={formData.email}
                             onChange={e => setFormData({ ...formData, email: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label>Password</label>
+                        <input
+                            type="text"
+                            required
+                            placeholder="Enter password"
+                            value={formData.password}
+                            onChange={e => setFormData({ ...formData, password: e.target.value })}
+                            minLength={6}
                         />
                     </div>
 
