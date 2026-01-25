@@ -12,6 +12,7 @@ import logo from './assets/logo.png';
 import UserManagement from './components/UserManagement';
 import AuditTab from './components/AuditTab';
 import ThemeToggle from './components/ThemeToggle';
+import DebtsTab from './components/DebtsTab';
 
 function AuthenticatedApp() {
   const { currentUser, userRole, logout } = useAuth();
@@ -31,35 +32,38 @@ function AuthenticatedApp() {
   // --- BADGE LISTENER (DRIVER ONLY) ---
   useEffect(() => {
     if (userRole !== 'driver' || !currentUser) {
-      setBadges({ deliveries: 0, pickups: 0 });
+      setBadges({ deliveries: 0, pickups: 0, loads: 0 });
       return;
     }
 
     const today = new Date().toISOString().split('T')[0];
+    const recordsRef = collection(db, "records");
 
-    // 1. Listen for Pending Loads (Badge for 'Deliveries' tab)
+    // 1. Pending Loads Badge (Now 'Assigned' Loads waiting for pickup? or Pending Deliveries?)
+    // Usually 'Loads' tab badge means "You have work to do (Load)".
+    // So we should count 'assigned_load'.
     const qLoads = query(
-      collection(db, "records"),
+      recordsRef,
       where("driverId", "==", currentUser.uid),
       where("date", "==", today),
       where("type", "==", "load"),
-      where("status", "==", "pending")
+      where("status", "==", "assigned_load") // NEW: Metric for "To Load"
     );
 
-    // 2. Listen for Assigned Pickups (Badge for 'Pick-ups' tab)
+    // 2. Pending Pickups Badge
     const qPickups = query(
-      collection(db, "records"),
+      recordsRef,
       where("driverId", "==", currentUser.uid),
       where("type", "==", "pickup"),
       where("status", "==", "assigned")
     );
 
-    const unsubLoads = onSnapshot(qLoads, (snapshot) => {
-      setBadges(prev => ({ ...prev, deliveries: snapshot.size }));
+    const unsubLoads = onSnapshot(qLoads, (snap) => {
+      setBadges(prev => ({ ...prev, loads: snap.size }));
     });
 
-    const unsubPickups = onSnapshot(qPickups, (snapshot) => {
-      setBadges(prev => ({ ...prev, pickups: snapshot.size }));
+    const unsubPickups = onSnapshot(qPickups, (snap) => {
+      setBadges(prev => ({ ...prev, pickups: snap.size }));
     });
 
     return () => {
@@ -119,8 +123,10 @@ function AuthenticatedApp() {
         <button
           className={`tab-button ${activeTab === 'loading' ? 'active' : ''}`}
           onClick={() => setActiveTab('loading')}
+          style={{ position: 'relative', overflow: 'visible' }}
         >
           Loads
+          <Badge count={badges.loads} />
         </button>
         <button
           className={`tab-button ${activeTab === 'delivery' ? 'active' : ''}`}
@@ -145,12 +151,21 @@ function AuthenticatedApp() {
           Summary
         </button>
         {(userRole === 'office' || userRole === 'backoffice') && (
-          <button
-            className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => setActiveTab('users')}
-          >
-            Users
-          </button>
+          <>
+            <button
+              className={`tab-button ${activeTab === 'debts' ? 'active' : ''}`}
+              onClick={() => setActiveTab('debts')}
+              style={{ borderBottom: activeTab === 'debts' ? '2px solid #ef4444' : 'none' }}
+            >
+              Debts 💸
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
+              onClick={() => setActiveTab('users')}
+            >
+              Users
+            </button>
+          </>
         )}
         {userRole === 'backoffice' && (
           <button
@@ -167,6 +182,7 @@ function AuthenticatedApp() {
         {activeTab === 'delivery' && <DeliveryForm />}
         {activeTab === 'pickup' && <PickupTab />}
         {activeTab === 'summary' && <DeliverySummary />}
+        {activeTab === 'debts' && <DebtsTab />}
         {activeTab === 'users' && <UserManagement />}
         {activeTab === 'audit' && <AuditTab />}
       </main>
