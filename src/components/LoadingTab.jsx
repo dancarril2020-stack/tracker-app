@@ -235,7 +235,7 @@ export default function LoadingTab({ onCompleteLoad }) {
                 <button
                     onClick={() => setEditingRecord(record)}
                     className="secondary-button"
-                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem' }}
+                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--text-muted)', color: 'var(--text-muted)' }}
                 >
                     Edit
                 </button>
@@ -244,7 +244,7 @@ export default function LoadingTab({ onCompleteLoad }) {
                     <button
                         onClick={() => handleLoadAction(record)}
                         className="primary-button"
-                        style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem', background: '#22c55e' }}
+                        style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem' }}
                     >
                         ✅ LOAD
                     </button>

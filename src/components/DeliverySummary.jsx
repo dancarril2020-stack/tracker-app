@@ -194,6 +194,23 @@ export default function DeliverySummary() {
         reader.readAsText(file);
     };
 
+    // --- LOAD Action for Driver in Summary ---
+    const handleLoadAction = async (load) => {
+        if (!window.confirm(`Confirm loading: ${load.recipient}?`)) return;
+        setLoading(true);
+        try {
+            await updateDoc(doc(db, "records", load.id), {
+                status: 'pending', // Transitions to 'Loaded' list (and 'Pending' execution)
+                loadedAt: new Date().toISOString()
+            });
+            fetchRecords(); // Refresh
+        } catch (err) {
+            console.error(err);
+            alert("Error updating load: " + err.message);
+        }
+        setLoading(false);
+    };
+
     // Edit Rules:
     const canEdit = (record) => {
         if (userRole === 'backoffice') return false;
@@ -216,14 +233,22 @@ export default function DeliverySummary() {
         // Incident check: Sum of Missing Items (Quantity)
         // If pending: Missing all items.
         // If incident_missing: Missing the difference.
+        // Logic for Loads Metric: Loaded (pending) / Total (pending + assigned_load)
+        // Note: 'pending' load means it is loaded on truck. 'assigned_load' means waiting.
+        const assignedLoadsCount = loads.filter(l => l.status === 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+        const loadedLoadsCount = loads.filter(l => l.status !== 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+        // We include incidents in loaded count because they were loaded/attempted.
+
+        const totalLoadsMetric = `${loadedLoadsCount} / ${loadedLoadsCount + assignedLoadsCount}`;
+
         // Incident check: Separate Missing vs Surplus
         let pendingCount = 0;
         let surplusCount = 0;
         let failedCount = 0;
 
-        loads.forEach(load => {
+        loads.filter(l => l.status !== 'assigned_load').forEach(load => {
+            // Only count incidents/pending for items that represent "Active/Loaded" stock
             const loadedQty = Number(load.quantity || 0);
-
             if (load.status === 'pending') {
                 pendingCount += loadedQty;
             } else if (load.status === 'incident_missing') {
@@ -241,11 +266,10 @@ export default function DeliverySummary() {
             failedCount += Number(f.quantity || 0);
         });
 
-
         const sumQty = (arr) => arr.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
 
         return {
-            totalLoads: sumQty(loads),
+            totalLoads: totalLoadsMetric,
             totalDeliveries: sumQty(deliveries),
             totalPickups: sumQty(pickups),
             pendingCount,
@@ -260,7 +284,58 @@ export default function DeliverySummary() {
         };
     }, [records]);
 
+
+    // --- LOAD VIEW SUB-STATE ---
+    const [loadViewMode, setLoadViewMode] = useState('assigned'); // 'assigned' | 'loaded'
+
     if (loading) return <div className="glass-panel" style={{ textAlign: 'center' }}>Loading data...</div>;
+
+    // Filter Logic
+    const getFilteredRecords = () => {
+        let filtered = records.filter(record => {
+            // Search Filter
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase().trim();
+                const recipient = (record.recipient || '').toLowerCase();
+                if (!recipient.includes(term)) return false;
+            }
+            return true;
+        });
+
+        if (selectedFilter === 'loads') {
+            // Apply Sub-Filter
+            if (loadViewMode === 'assigned') {
+                return filtered.filter(r => r.type === 'load' && r.status === 'assigned_load');
+            } else {
+                return filtered.filter(r => r.type === 'load' && r.status !== 'assigned_load');
+            }
+        } else if (selectedFilter === 'pending') {
+            // Show "Remaining to Deliver" (Loaded but not fully delivered)
+            return filtered.filter(r => r.type === 'load' && (r.status === 'pending' || r.status === 'incident_missing') && r.status !== 'assigned_load');
+        } else if (selectedFilter === 'delivered') {
+            return filtered.filter(r => r.type === 'delivery' || r.type === 'delivery_failed'); // Include failed in delivered history? Or separate? 
+            // Usually delivered tab shows successes. Failed shows in 'Failed' metric, but maybe here too?
+            // Let's stick to 'delivery' type.
+        } else if (selectedFilter === 'pickups') {
+            return filtered.filter(r => r.type === 'pickup');
+        }
+
+        return filtered; // 'all' - simplistic
+    };
+
+    const displayRecords = getFilteredRecords();
+
+    // Helper to get border color based on record type/status
+    const getStatusColor = (record) => {
+        if (record.type === 'load') {
+            if (record.status === 'assigned_load') return '#f59e0b'; // Orange for assigned
+            return '#3b82f6'; // Blue for loaded/pending
+        }
+        if (record.type === 'delivery') return '#22c55e'; // Green
+        if (record.type === 'delivery_failed') return '#ef4444'; // Red
+        if (record.type === 'pickup') return '#f97316'; // Orange
+        return 'var(--border)';
+    };
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto' }}>
@@ -335,12 +410,10 @@ export default function DeliverySummary() {
                         style={{
                             cursor: 'pointer',
                             border: selectedFilter === 'loads' ? '2px solid rgb(59, 130, 246)' : '1px solid var(--border)',
-                            boxShadow: selectedFilter === 'loads' ? '0 0 12px rgb(59, 130, 246)' : 'none',
-                            transition: 'all 0.2s'
                         }}
                     >
                         <div className="metric-val" style={{ color: 'rgb(59, 130, 246)' }}>{metrics.totalLoads}</div>
-                        <div className="metric-label">Loads</div>
+                        <div className="metric-label">Loaded / Assigned</div>
                     </div>
                     <div
                         className="metric-card"
@@ -407,47 +480,31 @@ export default function DeliverySummary() {
                 </div>
             </div>
 
+            {/* Loads Sub-Filter Toggle */}
+            {selectedFilter === 'loads' && (
+                <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
+                    <button
+                        onClick={() => setLoadViewMode('assigned')}
+                        className={loadViewMode === 'assigned' ? 'primary-button' : 'secondary-button'}
+                        style={{ flex: 1, padding: '0.5rem', opacity: loadViewMode === 'assigned' ? 1 : 0.7 }}
+                    >
+                        Waiting Assignment (Assigned)
+                    </button>
+                    <button
+                        onClick={() => setLoadViewMode('loaded')}
+                        className={loadViewMode === 'loaded' ? 'primary-button' : 'secondary-button'}
+                        style={{ flex: 1, padding: '0.5rem', opacity: loadViewMode === 'loaded' ? 1 : 0.7 }}
+                    >
+                        Loaded on Truck
+                    </button>
+                </div>
+            )}
+
             {/* Record List */}
             <div style={{ display: 'grid', gap: '1rem' }}>
-                {records.filter(record => {
-                    // 1. Search Filter
-                    if (searchTerm) {
-                        const term = searchTerm.toLowerCase().trim();
-                        const recipient = (record.recipient || '').toLowerCase();
-                        if (!recipient.includes(term)) return false;
-                    }
-
-                    // 2. Type Filter based on selectedFilter
-                    if (selectedFilter === 'all') return true;
-
-                    if (selectedFilter === 'loads') {
-                        return record.type === 'load';
-                    }
-
-                    if (selectedFilter === 'pending') {
-                        return (
-                            (record.type === 'load' && record.status === 'pending') ||
-                            record.type === 'delivery_failed' ||
-                            (record.type === 'load' && record.status === 'incident_missing') ||
-                            (record.type === 'load' && record.status === 'incident_excess')
-                        );
-                    }
-
-                    if (selectedFilter === 'delivered') {
-                        return record.type === 'delivery';
-                    }
-
-                    if (selectedFilter === 'pickups') {
-                        return record.type === 'pickup';
-                    }
-
-                    return true;
-                }).map(record => (
+                {displayRecords.map(record => (
                     <div key={record.id} className="card" style={{
-                        borderLeft: `4px solid ${record.type === 'load' ? '#3b82f6' :
-                            record.type === 'delivery' ? '#22c55e' :
-                                record.type === 'delivery_failed' ? '#ef4444' : '#f97316'
-                            }`
+                        borderLeft: `4px solid ${getStatusColor(record)}`
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div>
@@ -483,6 +540,9 @@ export default function DeliverySummary() {
                                         <span style={{ color: '#f59e0b' }}>
                                             (SURPLUS <span style={{ fontSize: '0.9em' }}>x{Number(record.deliveredQuantity || 0) - Number(record.quantity)}</span>)
                                         </span>
+                                    )}
+                                    {record.type === 'load' && record.status === 'assigned_load' && (
+                                        <span style={{ fontSize: '0.7rem', background: 'gray', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>WAITING LOAD</span>
                                     )}
                                     {record.status === 'delivery_failed' && (
                                         <span style={{ color: '#ef4444', fontWeight: 'bold' }}>

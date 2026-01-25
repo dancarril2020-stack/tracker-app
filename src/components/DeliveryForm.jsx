@@ -175,7 +175,7 @@ export default function DeliveryForm() {
             }
 
             // 1. Create Delivery Record
-            await addDoc(collection(db, "records"), {
+            const deliveryRef = await addDoc(collection(db, "records"), {
                 type: 'delivery',
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
@@ -184,12 +184,39 @@ export default function DeliveryForm() {
                 quantity: load.quantity,
                 date: today,
                 createdAt: new Date().toISOString(),
-                // Use load details
                 volumen: load.volumen || '',
                 expectedReembolso: load.reembolso || '',
-                collectedValue: collectedValue || '', // If empty, it means not collected (red status later)
-                reembolso: collectedValue || load.reembolso || '' // Keeps compatibility with old field for simple display
+                collectedValue: collectedValue || '',
+                reembolso: collectedValue || load.reembolso || ''
             });
+
+            // 1.5 Check for Debt (Shortfall)
+            // Parse values safely
+            const expectedVal = parseFloat((load.reembolso || "0").toString().replace(',', '.'));
+            const collectedVal = parseFloat((collectedValue || "0").toString().replace(',', '.'));
+
+            if (!isNaN(expectedVal) && expectedVal > 0) {
+                const shortfall = expectedVal - (isNaN(collectedVal) ? 0 : collectedVal);
+
+                // Tolerance for floating point (e.g. 0.01)
+                if (shortfall > 0.05) {
+                    // Create Debt Record
+                    await addDoc(collection(db, "debts"), {
+                        recipient: load.recipient,
+                        remittance: load.remittance,
+                        amount: shortfall.toFixed(2),
+                        originalLoadId: load.id,
+                        deliveryId: deliveryRef.id,
+                        driverId: currentUser.uid,
+                        driverName: currentUser.name || currentUser.email,
+                        date: today,
+                        createdAt: new Date().toISOString(),
+                        status: 'pending' // 'pending' | 'paid'
+                    });
+
+                    await logAction(currentUser, ACTIONS.UPDATE, `Debt Created: €${shortfall.toFixed(2)} for ${load.recipient}`, load.id);
+                }
+            }
 
             // 2. Update Load Record status
             await updateDoc(doc(db, "records", load.id), {
