@@ -79,7 +79,7 @@ export default function UserManagement() {
                     <div className="form-group">
                         <label>Password</label>
                         <input
-                            type="text"
+                            type="password"
                             required
                             placeholder="Enter password"
                             value={formData.password}
