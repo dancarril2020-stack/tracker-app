@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers, onSnapshot } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCurrentSession } from '../utils/sessionHelper';
 import EditModal from './EditModal';
 
 export default function LoadingTab({ onCompleteLoad }) {
@@ -8,6 +9,7 @@ export default function LoadingTab({ onCompleteLoad }) {
 
     // UI State
     const [viewMode, setViewMode] = useState('assigned'); // 'assigned' | 'loaded'
+    const [activeSession, setActiveSession] = useState(getCurrentSession());
     const [loading, setLoading] = useState(false);
     const [editingRecord, setEditingRecord] = useState(null);
 
@@ -24,7 +26,8 @@ export default function LoadingTab({ onCompleteLoad }) {
         remittance: '',
         quantity: '',
         volumen: '',
-        reembolso: ''
+        reembolso: '',
+        address: ''
     });
 
     // --- 1. FETCH DRIVERS ---
@@ -149,13 +152,14 @@ export default function LoadingTab({ onCompleteLoad }) {
                     driverId: targetDriverId,
                     driverName: targetDriverName,
                     ...formData,
+                    session: activeSession, // Save the active session
                     status: statusToFind,
                     createdAt: new Date().toISOString(),
                     date: today
                 });
             }
 
-            setFormData({ recipient: '', remittance: '', quantity: '', volumen: '', reembolso: '' });
+            setFormData({ recipient: '', remittance: '', quantity: '', volumen: '', reembolso: '', address: '' });
         } catch (err) {
             console.error(err);
             alert("Error: " + err.message);
@@ -178,9 +182,10 @@ export default function LoadingTab({ onCompleteLoad }) {
         setLoading(false);
     };
 
-    // Stable Metric Calculation (includes delivered items)
-    const totalAssignedQty = allDailyRecords.filter(l => l.status === 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
-    const totalLoadedAndDeliveredQty = allDailyRecords.filter(l => l.status !== 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+    // Stable Metric Calculation (Filtered by Session)
+    const sessionRecords = allDailyRecords.filter(r => r.session === activeSession);
+    const totalAssignedQty = sessionRecords.filter(l => l.status === 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+    const totalLoadedAndDeliveredQty = sessionRecords.filter(l => l.status !== 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
 
     // --- HELPER FOR CARD STYLE ---
     const getStatusColor = (record) => {
@@ -211,6 +216,11 @@ export default function LoadingTab({ onCompleteLoad }) {
                     <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                         Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
                     </div>
+                    {record.address && (
+                        <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                            📍 {record.address}
+                        </div>
+                    )}
                     {record.volumen && (
                         <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                             <span style={{ color: '#f51519ff' }}>Notas: </span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
@@ -232,13 +242,7 @@ export default function LoadingTab({ onCompleteLoad }) {
             </div>
 
             <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button
-                    onClick={() => setEditingRecord(record)}
-                    className="secondary-button"
-                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--text-muted)', color: 'var(--text-muted)' }}
-                >
-                    Edit
-                </button>
+
 
                 {record.status === 'assigned_load' && userRole === 'driver' && (
                     <button
@@ -257,11 +261,24 @@ export default function LoadingTab({ onCompleteLoad }) {
         <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
 
 
+            {/* Session Toggle Dropdown */}
+            <div style={{ marginBottom: '1.5rem' }}>
+                <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Session</label>
+                <select
+                    value={activeSession}
+                    onChange={(e) => setActiveSession(e.target.value)}
+                    className="dropdown-select"
+                >
+                    <option value="morning">🌅 Morning (up to 13:30)</option>
+                    <option value="afternoon">🌇 Afternoon (after 13:30)</option>
+                </select>
+            </div>
+
             {/* View: Assigned */}
             {viewMode === 'assigned' && (
                 <div className="animate-fade-in">
                     <div className="glass-panel" style={{ marginBottom: '1rem', border: '1px solid var(--primary)' }}>
-                        <h3 style={{ marginTop: 0 }}>+ New Assignment</h3>
+                        <h3 style={{ marginTop: 0 }}>+ New Assignment ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h3>
                         <form onSubmit={handleSubmit}>
 
                             {/* Driver Selector for Office (Inside form as requested) */}
@@ -283,6 +300,11 @@ export default function LoadingTab({ onCompleteLoad }) {
                             <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
                                 <label className="label">Recipient Name *</label>
                                 <input name="recipient" value={formData.recipient} onChange={handleChange} required />
+                            </div>
+
+                            <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
+                                <label className="label">Address / Location</label>
+                                <input name="address" value={formData.address} onChange={handleChange} placeholder="Optional delivery address..." />
                             </div>
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -311,8 +333,8 @@ export default function LoadingTab({ onCompleteLoad }) {
                     </div>
 
                     <div style={{ display: 'grid', gap: '1rem' }}>
-                        {assignedLoads.map(record => renderCard(record))}
-                        {assignedLoads.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No pending assignments.</div>}
+                        {assignedLoads.filter(l => l.session === activeSession).map(record => renderCard(record))}
+                        {assignedLoads.filter(l => l.session === activeSession).length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No pending assignments for this session.</div>}
                     </div>
                 </div>
             )}
@@ -321,8 +343,8 @@ export default function LoadingTab({ onCompleteLoad }) {
             {viewMode === 'loaded' && (
                 <div className="animate-fade-in">
                     <div style={{ display: 'grid', gap: '1rem' }}>
-                        {loadedLoads.map(record => renderCard(record))}
-                        {loadedLoads.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No loaded items.</div>}
+                        {loadedLoads.filter(l => l.session === activeSession).map(record => renderCard(record))}
+                        {loadedLoads.filter(l => l.session === activeSession).length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No loaded items for this session.</div>}
                     </div>
 
                     <button
