@@ -37,12 +37,15 @@ export default function EditModal({ record, onClose, onUpdate }) {
             // Create Audit Entry (Internal to doc)
             const changeLog = {
                 modifiedAt: new Date().toISOString(),
-                modifiedBy: currentUser.email,
+                modifiedBy: currentUser?.email || 'unknown',
                 previousState: {
                     recipient: record.recipient,
                     quantity: record.quantity,
                     remittance: record.remittance,
-                    status: record.status
+                    status: record.status,
+                    session: record.session || 'morning',
+                    address: record.address || '',
+                    observations: record.observations || ''
                 }
             };
 
@@ -53,6 +56,9 @@ export default function EditModal({ record, onClose, onUpdate }) {
                 quantity: formData.quantity,
                 volumen: formData.volumen || '',
                 reembolso: formData.reembolso || '',
+                session: formData.session || 'morning',
+                address: formData.address || '',
+                observations: formData.observations || '',
                 auditHistory: arrayUnion(changeLog)
             });
 
@@ -69,7 +75,8 @@ export default function EditModal({ record, onClose, onUpdate }) {
                     collection(db, "records"),
                     where("remittance", "==", formData.remittance),
                     where("recipient", "==", formData.recipient),
-                    where("type", "==", "load")
+                    where("type", "==", "load"),
+                    where("driverId", "==", record.driverId)
                 );
                 const querySnapshot = await getDocs(q);
 
@@ -114,7 +121,8 @@ export default function EditModal({ record, onClose, onUpdate }) {
                     collection(db, "records"),
                     where("remittance", "==", formData.remittance),
                     where("recipient", "==", formData.recipient),
-                    where("type", "==", "delivery")
+                    where("type", "==", "delivery"),
+                    where("driverId", "==", record.driverId)
                 );
                 const deliveriesSnap = await getDocs(deliveriesQ);
                 let totalDelivered = 0;
@@ -139,7 +147,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
             onClose();
         } catch (err) {
             console.error(err);
-            alert("Failed to update record.");
+            alert("Failed to update record: " + err.message);
         }
         setLoading(false);
     };
@@ -177,6 +185,26 @@ export default function EditModal({ record, onClose, onUpdate }) {
                         />
                     </div>
 
+                    <div style={{ marginTop: '1rem' }}>
+                        <label className="label">Address / Location</label>
+                        <input
+                            name="address"
+                            value={formData.address || ''}
+                            onChange={handleChange}
+                            placeholder="Optional delivery address..."
+                        />
+                    </div>
+
+                    <div style={{ marginTop: '1rem' }}>
+                        <label className="label">Driver Observations</label>
+                        <input
+                            name="observations"
+                            value={formData.observations || ''}
+                            onChange={handleChange}
+                            placeholder="Driver notes (e.g. left at gate)..."
+                        />
+                    </div>
+
                     {(record.type === 'delivery' || record.type === 'pickup' || record.type === 'load') && (
                         <div style={{ marginTop: '1rem' }}>
                             <label className="label">Portes/Reembolso</label>
@@ -188,6 +216,19 @@ export default function EditModal({ record, onClose, onUpdate }) {
                             />
                         </div>
                     )}
+
+                    <div style={{ marginTop: '1rem' }}>
+                        <label className="label">Session</label>
+                        <select
+                            name="session"
+                            value={formData.session || 'morning'}
+                            onChange={handleChange}
+                            style={{ width: '100%', padding: '0.8rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
+                        >
+                            <option value="morning">🌅 Morning</option>
+                            <option value="afternoon">🌇 Afternoon</option>
+                        </select>
+                    </div>
 
                     <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
                         <button type="button" onClick={onClose} style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)' }}>

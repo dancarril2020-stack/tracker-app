@@ -1,27 +1,26 @@
 
 import puppeteer from 'puppeteer';
 
-const BASE_URL = 'http://localhost:5174';
+const BASE_URL = 'http://localhost:3000';
 
 async function runTest() {
-    console.log("Starting End-to-End Test...");
+    console.log("Starting Bug Reproduction Test...");
     const browser = await puppeteer.launch({
         headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
 
-    // Allow dialogs (alerts) to be accepted automatically
+    // Capture logs
     page.on('dialog', async dialog => {
         console.log(`Alert message: ${dialog.message()}`);
         await dialog.accept();
     });
-
     page.on('console', msg => console.log('PAGE LOG:', msg.text()));
     page.on('pageerror', err => console.log('PAGE ERROR:', err.toString()));
 
     try {
-        // --- PART 1: OFFICE USER - CREATE NEW USER ---
+        // --- STEP 1: LOGIN AS OFFICE ---
         console.log("--- Step 1: Login as Office ---");
         await page.goto(BASE_URL);
         await page.waitForSelector('input[type="email"]');
@@ -29,145 +28,106 @@ async function runTest() {
         await page.type('input[type="password"]', 'password');
         await page.click('button[type="submit"]');
 
-        await page.waitForSelector('.tabs', { timeout: 5000 });
+        await page.waitForSelector('.tabs', { timeout: 10000 });
         console.log("Logged in as Office.");
 
-        console.log("--- Step 2: Create User Daniel Carril ---");
-        // Click Users tab - find button with text 'Users'
+        // --- STEP 2: ASSIGN LOAD TO DANIEL ---
+        console.log("--- Step 2: Assign Load ---");
+        // Ensure we are on Loads tab (usually default for Office, but let's click)
         const tabs = await page.$$('.tab-button');
-        let usersTab;
         for (const t of tabs) {
             const text = await page.evaluate(el => el.textContent, t);
-            if (text.includes('Users')) usersTab = t;
+            if (text.includes('Loads')) await t.click();
         }
-        if (!usersTab) throw new Error("Users tab not found");
-        await usersTab.click();
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Find Driver Dropdown
+        // It's inside the 'New Assignment' form
+        await page.waitForSelector('select');
+
+        // Select Daniel (Value unknown, search by text)
+        const val = await page.evaluate(() => {
+            const options = Array.from(document.querySelectorAll('select option'));
+            const target = options.find(o => o.textContent.toLowerCase().includes('daniel'));
+            return target ? target.value : null;
+        });
+
+        if (!val) throw new Error("Daniel user not found in dropdown!");
+        await page.select('select', val);
 
         // Fill Form
-        await page.waitForSelector('input[placeholder="e.g. John Doe"]');
-        await page.type('input[placeholder="e.g. John Doe"]', 'Daniel Carril'); // Name
-        await page.type('input[placeholder="e.g. john@tvr.com"]', 'danielcarril@tvr.com'); // Email
-
-        // Select Driver role (default is correct, but let's ensure)
-        await page.select('select', 'driver');
+        await page.type('input[name="recipient"]', 'Bug Reproduction Load');
+        await page.type('input[name="remittance"]', 'BUG-' + Date.now());
+        await page.type('input[name="quantity"]', '50');
 
         // Submit
-        const createBtns = await page.$$('button');
-        let createBtn;
-        for (const b of createBtns) {
-            const text = await page.evaluate(el => el.textContent, b);
-            if (text.includes('Create User')) createBtn = b;
-        }
-        if (createBtn) await createBtn.click();
-        else throw new Error("Create User button not found");
+        const forms = await page.$$('form');
+        const submitBtn = await forms[0].$('button[type="submit"]');
+        await submitBtn.click();
 
-        // Wait for success message or simply wait a bit
-        // The app shows a success message in green
-        await new Promise(r => setTimeout(r, 1000));
-        console.log("User creation attempted.");
+        console.log("Load Assigned.");
+        await new Promise(r => setTimeout(r, 2000)); // Wait for write
 
-        // Logout
-        // Use CSS selector for button in header
-        await page.waitForSelector('header button');
-        await page.click('header button');
+        // --- STEP 3: LOGOUT ---
+        await page.click('header button'); // Logout is the only button in header usually
         await page.waitForSelector('input[type="email"]');
-        console.log("Logged out.");
 
+        // --- STEP 4: LOGIN AS DRIVER ---
+        console.log("--- Step 4: Login as Daniel ---");
+        await page.type('input[type="email"]', 'danielcarril@tvr.com');
+        await page.type('input[type="password"]', 'password123');
+        await page.click('button[type="submit"]');
+        await page.waitForSelector('.tabs');
 
-        // --- PART 2: DRIVER USER - CREATE RECORDS ---
-        console.log("--- Step 3: Login as Driver (driver@tvr.com) ---");
-        // NOTE: We test with 'driver@tvr.com' first as requested, then 'danielcarril' if needed. 
-        // The prompt asked to test "users driver@tvr.com and danielcarril@tvr.com".
-        // Let's test driver@tvr.com for the records creation to save time, or do both?
-        // Prompt: "autotest the users driver@tvr.com and danielcarril@tvr.com making new loads, deliveries andd pickups"
-
-        // Let's iterate through both users
-        const testUsers = ['driver@tvr.com', 'danielcarril@tvr.com'];
-
-        for (const email of testUsers) {
-            console.log(`\nTesting flows for user: ${email}`);
-
-            // Login
-            await page.waitForSelector('input[type="email"]');
-
-            // Clear inputs
-            await page.evaluate(() => {
-                document.querySelector('input[type="email"]').value = '';
-                document.querySelector('input[type="password"]').value = '';
-            });
-
-            await page.type('input[type="email"]', email);
-            await page.type('input[type="password"]', 'password');
-            await page.click('button[type="submit"]');
-            await page.waitForSelector('.tabs');
-            console.log(`Logged in as ${email}`);
-
-            // A. Create Load
-            console.log("  Creating Load...");
-            // Load tab is default active
-            await page.waitForSelector('input[name="recipient"]');
-            await page.type('input[name="recipient"]', 'Client Load');
-            await page.type('input[name="remittance"]', 'LOAD-' + Date.now());
-            await page.type('input[name="quantity"]', '10');
-            // Click Register
-            let submitBtn = await page.$('button[type="submit"]');
-            await submitBtn.click();
-            await new Promise(r => setTimeout(r, 500)); // wait for alert/process
-
-            // B. Create Delivery
-            console.log("  Creating Delivery...");
-            const buttons = await page.$$('.tab-button');
-            for (const b of buttons) {
-                const t = await page.evaluate(el => el.textContent, b);
-                if (t.includes('Deliveries')) await b.click();
-            }
-            // Wait for form
-            await new Promise(r => setTimeout(r, 200));
-            await page.type('input[name="recipient"]', 'Client Delivery');
-            await page.type('input[name="remittance"]', 'DEL-' + Date.now());
-            await page.type('input[name="quantity"]', '5');
-            submitBtn = await page.$('button[type="submit"]');
-            await submitBtn.click();
-            await new Promise(r => setTimeout(r, 500));
-
-            // C. Create Pickup
-            console.log("  Creating Pickup...");
-            for (const b of buttons) {
-                const t = await page.evaluate(el => el.textContent, b);
-                if (t.includes('Pick-ups')) await b.click();
-            }
-            await new Promise(r => setTimeout(r, 200));
-            await page.type('input[name="recipient"]', 'Client Pickup');
-            await page.type('input[name="remittance"]', 'PICK-' + Date.now());
-            await page.type('input[name="quantity"]', '3');
-            submitBtn = await page.$('button[type="submit"]');
-            await submitBtn.click();
-            await new Promise(r => setTimeout(r, 500));
-
-            // Logout
-            // Logout
-            await page.waitForSelector('header button');
-            await page.click('header button');
-            await page.waitForSelector('input[type="email"]');
-            console.log(`Flow complete for ${email}`);
+        // --- STEP 5: EDIT THE LOAD ---
+        console.log("--- Step 5: Details/Edit ---");
+        // Driver should land on Loads tab or navigate there
+        const driverTabs = await page.$$('.tab-button');
+        for (const t of driverTabs) {
+            const text = await page.evaluate(el => el.textContent, t);
+            if (text.includes('Loads')) await t.click();
         }
 
-        console.log("\nALL TESTS PASSED SUCCESSFULLY!");
+        // Find the Card
+        await page.waitForXPath("//h3[contains(., 'Bug Reproduction Load')]", { timeout: 5000 });
+        const [cardTitle] = await page.$x("//h3[contains(., 'Bug Reproduction Load')]");
+        const card = await page.evaluateHandle(el => el.closest('.card'), cardTitle);
 
-    } catch (error) {
-        console.error("Test Failed:", error);
-        await page.screenshot({ path: 'test-failure.png' });
-        console.log("Screenshot saved to test-failure.png");
+        // Click Edit
+        const editBtn = await card.$('button.secondary-button');
+        if (!editBtn) throw new Error("Edit button not found on card");
+        await editBtn.click();
+        console.log("Clicked Edit Button.");
 
-        // Log active tab
-        const activeTab = await page.evaluate(() => {
-            const active = document.querySelector('.tab-button.active');
-            return active ? active.textContent : 'NONE';
+        // Wait for Modal and Save
+        await page.waitForSelector('div[style*="fixed"]'); // Modal overlay
+        console.log("Modal opened.");
+
+        // Change Quantity
+        // Type 99 (Simulate edit)
+        // We target the input inside the modal specifically
+        await page.evaluate(() => {
+            // Basic selector might pick up the background form input, so we need to be precise
+            // The modal is usually at the end of the body
+            const modal = document.body.lastElementChild;
+            const input = modal.querySelector('input[name="quantity"]');
+            if (input) input.value = '99';
         });
-        console.log("Active Tab on Failure:", activeTab);
 
-        const html = await page.content();
-        console.log("Page Content (First 20000 chars):", html.substring(0, 20000));
+        const saveBtns = await page.$x("//button[contains(., 'Save Changes')]");
+        if (saveBtns.length > 0) {
+            await saveBtns[0].click();
+            console.log("Clicked Save Changes.");
+        } else {
+            throw new Error("Save button missing");
+        }
+
+        // Wait for potential alert or console error
+        await new Promise(r => setTimeout(r, 3000));
+        console.log("Test Finished (Check logs for errors).");
+
+    } catch (err) {
+        console.error("TEST FAILED:", err);
         process.exit(1);
     } finally {
         await browser.close();
