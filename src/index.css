@@ -62,7 +62,7 @@ button {
   font-weight: 500;
   font-family: inherit;
   background-color: var(--primary);
-  color: var(--text-muted);
+  color: #000000; /* Fixed for high contrast on orange */
   cursor: pointer;
   transition: all 0.25s;
 }
@@ -70,7 +70,7 @@ button {
 button:hover {
   background-color: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
 }
 
 input,
@@ -105,10 +105,24 @@ select:focus {
 
 .tabs {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start; /* Better for scrolling */
   margin-bottom: 2rem;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  overflow-x: auto; /* Enable horizontal scroll */
+  padding: 0.5rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Hide scrollbar for clean look */
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .tabs {
+    justify-content: center;
+    overflow-x: visible;
+  }
 }
 
 .tab-button {
