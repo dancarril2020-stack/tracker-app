@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getCurrentSession } from '../utils/sessionHelper';
 
 export default function PickupTab() {
     const { currentUser, userRole } = useAuth();
     const [loading, setLoading] = useState(false);
+    const [activeSession, setActiveSession] = useState(getCurrentSession());
 
     // --- STATE FOR OFFICE (ASSIGNMENT) ---
     const [drivers, setDrivers] = useState([]);
@@ -16,7 +18,8 @@ export default function PickupTab() {
         volumen: '',
         portes: 'paid', // 'paid' or 'due'
         reembolso: '',
-        address: '' // Optional address field helpful for assignments
+        address: '', // Optional address field helpful for assignments
+        session: getCurrentSession() // Default session for assignment
     });
 
     // --- STATE FOR DRIVER (PROCESSING) ---
@@ -28,7 +31,8 @@ export default function PickupTab() {
         quantity: '',
         volumen: '',
         portes: 'paid',
-        reembolso: ''
+        reembolso: '',
+        address: ''
     });
 
     // --- FETCH DATA ---
@@ -85,6 +89,7 @@ export default function PickupTab() {
                 driverId: selectedDriver,
                 driverName: driverObj ? (driverObj.name || driverObj.email) : 'Unknown',
                 ...assignData,
+                session: assignData.session || activeSession,
                 assignedAt: new Date().toISOString(),
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0] // Assignment date
@@ -146,13 +151,14 @@ export default function PickupTab() {
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
+                session: activeSession,
                 collectedValue: manualData.reembolso || '', // Manual entry implies collected
                 expectedReembolso: manualData.reembolso || '',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
             });
             alert("Manual Pickup Registered!");
-            setManualData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '' });
+            setManualData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
             setViewMode('list');
         } catch (err) {
             console.error(err);
@@ -214,10 +220,17 @@ export default function PickupTab() {
                     </div>
 
                     <div style={{ textAlign: 'left', marginTop: '1rem' }}>
-                        <label className="label">Portes</label>
                         <select name="portes" value={assignData.portes} onChange={handleAssignChange}>
                             <option value="paid">Paid (Pagados)</option>
                             <option value="due">Due (Debidos)</option>
+                        </select>
+                    </div>
+
+                    <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+                        <label className="label">Session</label>
+                        <select name="session" value={assignData.session} onChange={handleAssignChange}>
+                            <option value="morning">🌅 Morning</option>
+                            <option value="afternoon">🌇 Afternoon</option>
                         </select>
                     </div>
 
@@ -233,8 +246,22 @@ export default function PickupTab() {
     if (viewMode === 'list') {
         return (
             <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
+
+                {/* Session Toggle Dropdown */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Session</label>
+                    <select
+                        value={activeSession}
+                        onChange={(e) => setActiveSession(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)' }}
+                    >
+                        <option value="morning">🌅 Morning (up to 13:30)</option>
+                        <option value="afternoon">🌇 Afternoon (after 13:30)</option>
+                    </select>
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h2>Assigned Pickups</h2>
+                    <h2>Assigned Pickups ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h2>
                     <button
                         onClick={() => setViewMode('manual')}
                         className="secondary-button"
@@ -244,13 +271,13 @@ export default function PickupTab() {
                     </button>
                 </div>
 
-                {assignedPickups.length === 0 ? (
+                {assignedPickups.filter(p => p.session === activeSession).length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No pending assignments.
+                        No pending assignments for this session.
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gap: '1rem' }}>
-                        {assignedPickups.map(pickup => (
+                        {assignedPickups.filter(p => p.session === activeSession).map(pickup => (
                             <div key={pickup.id} className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                     <div>
@@ -305,6 +332,10 @@ export default function PickupTab() {
                 <div style={{ textAlign: 'left' }}>
                     <label className="label">Recipient Name *</label>
                     <input name="recipient" value={manualData.recipient} onChange={handleManualChange} required />
+                </div>
+                <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+                    <label className="label">Address / Location</label>
+                    <input name="address" value={manualData.address} onChange={handleManualChange} placeholder="Optional pickup address..." />
                 </div>
                 {/* ... (Previous Manual Form Content) ... */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>

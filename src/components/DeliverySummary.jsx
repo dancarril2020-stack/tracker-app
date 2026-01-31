@@ -11,6 +11,7 @@ export default function DeliverySummary() {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [summaryDate, setSummaryDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedSession, setSelectedSession] = useState('all'); // 'all', 'morning', 'afternoon'
     const [editingRecord, setEditingRecord] = useState(null);
 
     // Driver Filter State
@@ -224,11 +225,19 @@ export default function DeliverySummary() {
         return true;
     };
 
+    // --- Memoized Filtered Records (Phase 1: Date/Driver/Session) ---
+    const baseFilteredRecords = useMemo(() => {
+        return records.filter(r => {
+            if (selectedSession !== 'all' && r.session !== selectedSession) return false;
+            return true;
+        });
+    }, [records, selectedSession]);
+
     // Metrics
     const metrics = useMemo(() => {
-        const loads = records.filter(r => r.type === 'load');
-        const deliveries = records.filter(r => r.type === 'delivery');
-        const pickups = records.filter(r => r.type === 'pickup');
+        const loads = baseFilteredRecords.filter(r => r.type === 'load');
+        const deliveries = baseFilteredRecords.filter(r => r.type === 'delivery');
+        const pickups = baseFilteredRecords.filter(r => r.type === 'pickup');
 
         // Incident check: Sum of Missing Items (Quantity)
         // If pending: Missing all items.
@@ -261,7 +270,7 @@ export default function DeliverySummary() {
         });
 
         // Also count explicitly created 'delivery_failed' records
-        const failedRecords = records.filter(r => r.type === 'delivery_failed');
+        const failedRecords = baseFilteredRecords.filter(r => r.type === 'delivery_failed');
         failedRecords.forEach(f => {
             failedCount += Number(f.quantity || 0);
         });
@@ -282,7 +291,7 @@ export default function DeliverySummary() {
                 return acc + (isNaN(val) ? 0 : val);
             }, 0).toFixed(2)
         };
-    }, [records]);
+    }, [baseFilteredRecords]);
 
 
     // --- LOAD VIEW SUB-STATE ---
@@ -292,7 +301,7 @@ export default function DeliverySummary() {
 
     // Filter Logic
     const getFilteredRecords = () => {
-        let filtered = records.filter(record => {
+        let filtered = baseFilteredRecords.filter(record => {
             // Search Filter
             if (searchTerm) {
                 const term = searchTerm.toLowerCase().trim();
@@ -342,36 +351,12 @@ export default function DeliverySummary() {
 
             {/* Date Filter & Metrics Header */}
             <div className="glass-panel" style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <h2 style={{ margin: 0 }}>Daily Summary</h2>
-
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        {(userRole === 'office' || userRole === 'backoffice') && (
-                            <select
-                                value={selectedDriver}
-                                onChange={(e) => setSelectedDriver(e.target.value)}
-                                style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
-                            >
-                                <option value="all">All Drivers</option>
-                                {drivers.map(d => (
-                                    <option key={d.uid} value={d.uid}>
-                                        {d.name || d.email}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
-
-                        <input
-                            type="date"
-                            value={summaryDate}
-                            onChange={(e) => setSummaryDate(e.target.value)}
-                            style={{ width: 'auto' }}
-                        />
-                    </div>
 
                     {/* EXPORT / IMPORT ACTIONS (Office Only) */}
                     {(userRole === 'office' || userRole === 'backoffice') && (
-                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button
                                 onClick={handleExport}
                                 className="secondary-button"
@@ -391,6 +376,55 @@ export default function DeliverySummary() {
                         </div>
                     )}
                 </div>
+
+                {/* Filters Row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+
+                    {/* Session Filter */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                        <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0' }}>Session</label>
+                        <select
+                            value={selectedSession}
+                            onChange={(e) => setSelectedSession(e.target.value)}
+                            style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)', fontSize: '0.9rem' }}
+                        >
+                            <option value="all">📅 All Day</option>
+                            <option value="morning">🌅 Morning</option>
+                            <option value="afternoon">🌇 Afternoon</option>
+                        </select>
+                    </div>
+
+                    {/* Driver Filter (Office Only) */}
+                    {(userRole === 'office' || userRole === 'backoffice') && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                            <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0' }}>Driver</label>
+                            <select
+                                value={selectedDriver}
+                                onChange={(e) => setSelectedDriver(e.target.value)}
+                                style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)', fontSize: '0.9rem' }}
+                            >
+                                <option value="all">All Drivers</option>
+                                {drivers.map(d => (
+                                    <option key={d.uid} value={d.uid}>
+                                        {d.name || d.email}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Date Filter */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                        <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0' }}>Date</label>
+                        <input
+                            type="date"
+                            value={summaryDate}
+                            onChange={(e) => setSummaryDate(e.target.value)}
+                            style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)', fontSize: '0.9rem' }}
+                        />
+                    </div>
+                </div>
+
 
                 {/* Search Bar */}
                 <div style={{ marginBottom: '1rem' }}>
@@ -555,6 +589,16 @@ export default function DeliverySummary() {
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                     Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
                                 </div>
+                                {record.address && (
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                                        📍 {record.address}
+                                    </div>
+                                )}
+                                {record.observations && (
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontStyle: 'italic', marginTop: '0.25rem', padding: '0.4rem', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+                                        <span style={{ color: 'var(--primary)', fontStyle: 'normal', fontWeight: 'bold' }}>Obs:</span> {record.observations}
+                                    </div>
+                                )}
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                     <span style={{ color: '#f51519ff' }}>Notas: </span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
                                 </div>

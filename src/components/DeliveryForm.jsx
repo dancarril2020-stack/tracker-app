@@ -2,12 +2,14 @@
 import React, { useState } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit';
+import { getCurrentSession } from '../utils/sessionHelper';
 
 import { useAuth } from '../contexts/AuthContext';
 
 export default function DeliveryForm() {
     const { currentUser, userRole } = useAuth(); // Added userRole
     const [viewMode, setViewMode] = useState('list'); // 'list' (default) or 'manual'
+    const [activeSession, setActiveSession] = useState(getCurrentSession());
     const [pendingLoads, setPendingLoads] = useState([]);
 
     // Form Data
@@ -16,8 +18,11 @@ export default function DeliveryForm() {
         remittance: '',
         quantity: '',
         volumen: '',
-        reembolso: ''
+        reembolso: '',
+        address: '',
+        observations: ''
     });
+    const [cardObservations, setCardObservations] = useState({}); // Track notes per card in list view
     const [loading, setLoading] = useState(false);
 
     // Driver Selection State (for Office/Backoffice)
@@ -79,6 +84,10 @@ export default function DeliveryForm() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    const handleCardObsChange = (loadId, value) => {
+        setCardObservations(prev => ({ ...prev, [loadId]: value }));
+    };
+
     // Fail Modal State
     const [failingLoad, setFailingLoad] = useState(null);
     const [failureReason, setFailureReason] = useState('');
@@ -127,9 +136,11 @@ export default function DeliveryForm() {
                 reembolso: failingLoad.reembolso || '',
                 date: today,
                 createdAt: new Date().toISOString(),
+                session: failingLoad.session || activeSession, // Inherit from load or current
                 status: 'failed',
                 failureReason: failureReason,
-                linkedLoadId: failingLoad.id
+                linkedLoadId: failingLoad.id,
+                address: failingLoad.address || ''
             });
 
             // 2. Update the Original Load Record
@@ -184,10 +195,13 @@ export default function DeliveryForm() {
                 quantity: load.quantity,
                 date: today,
                 createdAt: new Date().toISOString(),
+                session: load.session || activeSession, // Inherit or current
                 volumen: load.volumen || '',
                 expectedReembolso: load.reembolso || '',
                 collectedValue: collectedValue || '',
-                reembolso: collectedValue || load.reembolso || ''
+                reembolso: collectedValue || load.reembolso || '',
+                address: load.address || '',
+                observations: cardObservations[load.id] || ''
             });
 
             // 1.5 Check for Debt (Shortfall)
@@ -250,6 +264,7 @@ export default function DeliveryForm() {
                     (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || currentUser.email)
                     : (currentUser.name || currentUser.email),
                 ...formData,
+                session: activeSession,
                 status: 'delivered',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
@@ -292,7 +307,7 @@ export default function DeliveryForm() {
             }
 
             alert("Delivery Registered Successfully");
-            setFormData({ recipient: '', remittance: '', quantity: '', volumen: '', reembolso: '' });
+            setFormData({ recipient: '', remittance: '', quantity: '', volumen: '', reembolso: '', address: '', observations: '' });
             setViewMode('list');
 
         } catch (err) {
@@ -305,8 +320,22 @@ export default function DeliveryForm() {
     if (viewMode === 'list') {
         return (
             <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
+
+                {/* Session Toggle Dropdown */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Session</label>
+                    <select
+                        value={activeSession}
+                        onChange={(e) => setActiveSession(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)' }}
+                    >
+                        <option value="morning">🌅 Morning (up to 13:30)</option>
+                        <option value="afternoon">🌇 Afternoon (after 13:30)</option>
+                    </select>
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h2>Pending Deliveries</h2>
+                    <h2>Pending Deliveries ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h2>
                     <button
                         onClick={() => setViewMode('manual')}
                         className="secondary-button"
@@ -327,9 +356,9 @@ export default function DeliveryForm() {
                     />
                 </div>
 
-                {pendingLoads.length === 0 ? (
+                {pendingLoads.filter(l => l.session === activeSession).length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No pending loads found to deliver.
+                        No pending loads found for this session.
                         <br /><br />
                         <button onClick={() => setViewMode('manual')} style={{ background: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)', padding: '0.5rem 1rem' }}>
                             Register Manual Delivery
@@ -338,6 +367,7 @@ export default function DeliveryForm() {
                 ) : (
                     <div style={{ display: 'grid', gap: '1rem' }}>
                         {pendingLoads.filter(record => {
+                            if (record.session !== activeSession) return false;
                             if (!searchTerm) return true;
                             return (record.recipient || '').toLowerCase().includes(searchTerm.toLowerCase().trim());
                         }).map(record => (
@@ -360,6 +390,11 @@ export default function DeliveryForm() {
                                         <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                             Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
                                         </div>
+                                        {record.address && (
+                                            <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                                                📍 {record.address}
+                                            </div>
+                                        )}
                                         <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                             <span style={{ color: '#f51519ff' }}>Notas:</span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
                                         </div>
@@ -379,73 +414,97 @@ export default function DeliveryForm() {
                                     </div>
                                 </div>
 
-                                <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
-                                    <button
-                                        onClick={(e) => handleFailClick(e, record)}
-                                        style={{
-                                            padding: '0.3rem 1rem',
-                                            fontSize: '0.9rem',
-                                            background: 'transparent',
-                                            border: '1px solid #ef4444',
-                                            color: '#ef4444',
-                                            marginRight: '0.5rem',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Fail
-                                    </button>
-                                    <button
-                                        onClick={(e) => handleDeliverFromList(e, record)}
-                                        className="primary-button"
-                                        style={{ padding: '0.3rem 1rem', fontSize: '0.9rem' }}
-                                    >
-                                        Deliver
-                                    </button>
+
+                                <div>
+                                    <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', alignItems: 'center', textAlign: 'right' }}>
+                                        <input
+                                            type="text"
+                                            placeholder="Add observations (e.g. left with neighbor)..."
+                                            value={cardObservations[record.id] || ''}
+                                            onChange={(e) => handleCardObsChange(record.id, e.target.value)}
+                                            style={{
+                                                width: '30%',
+                                                padding: '0.6rem',
+                                                fontSize: '0.9rem',
+                                                borderRadius: '6px',
+                                                border: '1px solid var(--border)',
+                                                background: 'var(--input-bg)',
+                                                color: 'var(--text-main)',
+                                                marginBottom: 0,
+                                                textAlign: 'left'
+                                            }}
+                                        />
+                                        <button
+                                            onClick={(e) => handleFailClick(e, record)}
+                                            style={{
+                                                padding: '0.3rem 1rem',
+                                                fontSize: '0.9rem',
+                                                background: 'transparent',
+                                                border: '1px solid #ef4444',
+                                                color: '#ef4444',
+                                                marginRight: '0.5rem',
+                                                marginLeft: '50%',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Fail
+                                        </button>
+                                        <button
+                                            onClick={(e) => handleDeliverFromList(e, record)}
+                                            className="primary-button"
+                                            style={{ padding: '0.3rem 1rem', fontSize: '0.9rem' }}
+                                        >
+                                            Deliver
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
                     </div>
-                )}
+                )
+                }
 
                 {/* Fail Modal (duplicated for list mode legality or move outside conditional) */}
-                {failingLoad && (
-                    <div style={{
-                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                        background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        zIndex: 1000, backdropFilter: 'blur(5px)'
-                    }}>
-                        <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: '#18181b', border: '1px solid #ef4444' }}>
-                            <h3 style={{ color: '#ef4444', marginTop: 0 }}>Report Delivery Failure</h3>
-                            <p style={{ color: 'var(--text-muted)' }}>
-                                Recipient: <strong style={{ color: 'var(--text-main)' }}>{failingLoad.recipient}</strong>
-                            </p>
-                            <div style={{ margin: '1rem 0' }}>
-                                <label className="label">Reason for Failure</label>
-                                <textarea
-                                    value={failureReason}
-                                    onChange={(e) => setFailureReason(e.target.value)}
-                                    placeholder="e.g. Business Closed, Customer Rejected..."
-                                    style={{ width: '100%', minHeight: '80px', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '0.5rem' }}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button
-                                    onClick={() => setFailingLoad(null)}
-                                    style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '0.5rem' }}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={confirmFailDelivery}
-                                    style={{ flex: 1, background: '#ef4444', border: 'none', color: 'white', padding: '0.5rem', fontWeight: 'bold' }}
-                                >
-                                    Confirm Failure
-                                </button>
+                {
+                    failingLoad && (
+                        <div style={{
+                            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                            background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 1000, backdropFilter: 'blur(5px)'
+                        }}>
+                            <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: '#18181b', border: '1px solid #ef4444' }}>
+                                <h3 style={{ color: '#ef4444', marginTop: 0 }}>Report Delivery Failure</h3>
+                                <p style={{ color: 'var(--text-muted)' }}>
+                                    Recipient: <strong style={{ color: 'var(--text-main)' }}>{failingLoad.recipient}</strong>
+                                </p>
+                                <div style={{ margin: '1rem 0' }}>
+                                    <label className="label">Reason for Failure</label>
+                                    <textarea
+                                        value={failureReason}
+                                        onChange={(e) => setFailureReason(e.target.value)}
+                                        placeholder="e.g. Business Closed, Customer Rejected..."
+                                        style={{ width: '100%', minHeight: '80px', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '0.5rem' }}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <button
+                                        onClick={() => setFailingLoad(null)}
+                                        style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '0.5rem' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={confirmFailDelivery}
+                                        style={{ flex: 1, background: '#ef4444', border: 'none', color: 'white', padding: '0.5rem', fontWeight: 'bold' }}
+                                    >
+                                        Confirm Failure
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )
+                }
+            </div >
         );
     }
 
@@ -496,6 +555,11 @@ export default function DeliveryForm() {
                     <input name="recipient" value={formData.recipient} onChange={handleChange} required />
                 </div>
 
+                <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+                    <label className="label">Address / Location</label>
+                    <input name="address" value={formData.address} onChange={handleChange} placeholder="Optional delivery address..." />
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div style={{ textAlign: 'left' }}>
                         <label className="label">Remittance *</label>
@@ -521,6 +585,11 @@ export default function DeliveryForm() {
                         <label className="label">Volumen/Missing/etc</label>
                         <input name="volumen" value={formData.volumen} onChange={handleChange} />
                     </div>
+                </div>
+
+                <div style={{ textAlign: 'left' }}>
+                    <label className="label">Observations</label>
+                    <input name="observations" value={formData.observations} onChange={handleChange} placeholder="Notes for the summary..." />
                 </div>
 
                 <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '1rem' }}>
