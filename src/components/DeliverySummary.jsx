@@ -280,11 +280,18 @@ export default function DeliverySummary() {
         return {
             totalLoads: totalLoadsMetric,
             totalDeliveries: sumQty(deliveries),
-            totalPickups: sumQty(pickups),
+            totalPickups: (() => {
+                const completedCount = pickups.filter(p => p.status === 'completed_pickup').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+                const assignedCount = pickups.filter(p => p.status === 'assigned').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+                return `${completedCount} / ${completedCount + assignedCount}`;
+            })(),
             pendingCount,
             surplusCount,
             failedCount,
             reembolsoTotal: [...deliveries, ...pickups].reduce((acc, curr) => {
+                // Exclude 'assigned', 'assignment_complete', 'assigned_load', and 'pending' items
+                if (['assigned', 'assignment_complete', 'assigned_load', 'pending'].includes(curr.status)) return acc;
+
                 // Use collectedValue if present (actual collection), otherwise fallback to reembolso (expected/manual)
                 const valStr = (curr.collectedValue || curr.reembolso || "0").toString();
                 const val = parseFloat(valStr.replace(',', '.'));
@@ -550,9 +557,9 @@ export default function DeliverySummary() {
                                     display: 'flex', alignItems: 'center', gap: '0.5rem'
                                 }}>
                                     {record.type}
-                                    {record.type === 'pickup' && record.status === 'assigned' && (
+                                    {record.type === 'pickup' && (record.status === 'assigned' || record.status === 'assignment_complete') && (
                                         <span style={{ color: '#f59e0b', marginLeft: '0.5rem' }}>
-                                            - ASSIGNED
+                                            - ASSIGNED {record.status === 'assignment_complete' ? '(Processed)' : ''}
                                         </span>
                                     )}
                                     {record.type === 'pickup' && record.status !== 'assigned' && (
@@ -617,7 +624,7 @@ export default function DeliverySummary() {
                                 </div>
                                 {record.reembolso && (
                                     <div style={{ marginTop: '0.5rem', color: (record.type === 'delivery' && (record.collectedValue ? record.collectedValue !== '0' : record.reembolso !== '0')) ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
-                                        € {record.reembolso}
+                                        € {record.collectedValue || record.reembolso}
                                     </div>
                                 )}
                             </div>

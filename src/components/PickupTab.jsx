@@ -118,18 +118,48 @@ export default function PickupTab() {
 
         setLoading(true);
         try {
+            // 1. Mark the ASSIGNMENT as 'completed_assignment' (or similar)
+            // This hides it from the Driver's "Assigned" list but keeps the record for the Summary tab
+            // We'll update the status so it's clear it's no longer "pending assignment"
+            // Wait, if we change status to 'completed_assignment', does Summary tab filter it?
+            // Summary tab shows 'pickup' type. 
+            // If we want the "ASSIGNED" card to REMAIN in Summary as a record of the assignment, we should just update its status 
+            // to something that effectively removes it from Driver's active list
+            // PickupTab uses: where("status", "==", "assigned")
+            // So ANY other status removes it from the list.
+
             const recordRef = doc(db, "records", pickup.id);
             await updateDoc(recordRef, {
-                status: 'completed_pickup', // Mark as done so it shows in summary but leaves this list
-                completedAt: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0], // Update date to actual pickup date if different
-                collectedValue: collectedValue || '', // Save collected value
-                expectedReembolso: pickup.reembolso || '' // Ensure expected is saved if not already
+                status: 'assignment_complete' // New status: preserved as history
             });
+
+            // 2. Create a NEW record for the ACTUAL PICKUP (Result)
+            // This generates the second card "PICK UP DONE"
+            await addDoc(collection(db, "records"), {
+                type: 'pickup',
+                status: 'completed_pickup', // Green card
+                driverId: pickup.driverId,
+                driverName: pickup.driverName,
+                recipient: pickup.recipient,
+                remittance: pickup.remittance,
+                quantity: pickup.quantity,
+                volumen: pickup.volumen,
+                portes: pickup.portes,
+                address: pickup.address,
+                session: pickup.session,
+                // New Data
+                collectedValue: collectedValue || '',
+                reembolso: collectedValue || pickup.reembolso || '', // Actual collection becomes the value
+                expectedReembolso: pickup.reembolso || '', // Keep track of expectation
+                completedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                date: new Date().toISOString().split('T')[0]
+            });
+
             fetchAssignedPickups(); // Refresh list
         } catch (err) {
             console.error(err);
-            alert("Error processing pickup");
+            alert("Error processing pickup: " + err.message);
         }
         setLoading(false);
     };
