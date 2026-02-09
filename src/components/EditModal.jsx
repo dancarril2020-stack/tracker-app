@@ -23,9 +23,24 @@ export default function EditModal({ record, onClose, onUpdate }) {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        // Basic validation similar to other forms
-        if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        // Basic validation for numeric fields
+        if ((name === 'reembolso' || name === 'collectedValue') && !/^[0-9,.]*$/.test(value)) return;
+
+        setFormData(prev => {
+            const newData = { ...prev, [name]: value };
+
+            // Auto-sync: If user edits 'reembolso' and 'collectedValue' was same as 'reembolso', update 'collectedValue' too.
+            // This handles the case where Office edits a standard delivery price and expects the "Total" (collected) to update.
+            if (name === 'reembolso') {
+                const currentCollected = prev.collectedValue || '';
+                const currentExpected = prev.reembolso || '';
+                // If they matched (or collected was empty? optional), keep them in sync
+                if (currentCollected === currentExpected) {
+                    newData.collectedValue = value;
+                }
+            }
+            return newData;
+        });
     };
 
     const handleSubmit = async (e) => {
@@ -39,26 +54,28 @@ export default function EditModal({ record, onClose, onUpdate }) {
                 modifiedAt: new Date().toISOString(),
                 modifiedBy: currentUser?.email || 'unknown',
                 previousState: {
-                    recipient: record.recipient,
-                    quantity: record.quantity,
-                    remittance: record.remittance,
-                    status: record.status,
+                    recipient: record.recipient || '',
+                    quantity: record.quantity || 0,
+                    remittance: record.remittance || '',
+                    status: record.status || 'unknown',
                     session: record.session || 'morning',
                     address: record.address || '',
-                    observations: record.observations || ''
+                    observations: record.observations || '',
+                    collectedValue: record.collectedValue || ''
                 }
             };
 
             // Update Document
             await updateDoc(recordRef, {
-                recipient: formData.recipient,
-                remittance: formData.remittance,
-                quantity: formData.quantity,
+                recipient: formData.recipient || '',
+                remittance: formData.remittance || '',
+                quantity: formData.quantity || 0,
                 volumen: formData.volumen || '',
                 reembolso: formData.reembolso || '',
                 session: formData.session || 'morning',
                 address: formData.address || '',
                 observations: formData.observations || '',
+                collectedValue: formData.collectedValue || '',
                 auditHistory: arrayUnion(changeLog)
             });
 
@@ -76,7 +93,8 @@ export default function EditModal({ record, onClose, onUpdate }) {
                     where("remittance", "==", formData.remittance),
                     where("recipient", "==", formData.recipient),
                     where("type", "==", "load"),
-                    where("driverId", "==", record.driverId)
+                    where("driverId", "==", record.driverId),
+                    where("date", "==", record.date) // Scope to same day
                 );
                 const querySnapshot = await getDocs(q);
 
@@ -89,7 +107,8 @@ export default function EditModal({ record, onClose, onUpdate }) {
                         collection(db, "records"),
                         where("remittance", "==", formData.remittance),
                         where("recipient", "==", formData.recipient),
-                        where("type", "==", "delivery")
+                        where("type", "==", "delivery"),
+                        where("date", "==", record.date) // Scope to same day
                     );
                     const deliveriesSnap = await getDocs(deliveriesQ);
 
@@ -122,7 +141,8 @@ export default function EditModal({ record, onClose, onUpdate }) {
                     where("remittance", "==", formData.remittance),
                     where("recipient", "==", formData.recipient),
                     where("type", "==", "delivery"),
-                    where("driverId", "==", record.driverId)
+                    where("driverId", "==", record.driverId),
+                    where("date", "==", record.date) // Scope to same day
                 );
                 const deliveriesSnap = await getDocs(deliveriesQ);
                 let totalDelivered = 0;
@@ -130,7 +150,10 @@ export default function EditModal({ record, onClose, onUpdate }) {
 
                 let newStatus = 'delivered';
                 // Note: newQty here is the NEW load quantity we just typed
-                if (totalDelivered === 0) newStatus = 'pending';
+                if (totalDelivered === 0) {
+                    // Fix: If it was 'assigned_load' (waiting), keep it. Don't flip to 'pending' (loaded) unless explicit action taken elsewhere.
+                    newStatus = (record.status === 'assigned_load') ? 'assigned_load' : 'pending';
+                }
                 else if (totalDelivered < newQty) newStatus = 'incident_missing';
                 else if (totalDelivered > newQty) newStatus = 'incident_excess';
 
@@ -206,14 +229,25 @@ export default function EditModal({ record, onClose, onUpdate }) {
                     </div>
 
                     {(record.type === 'delivery' || record.type === 'pickup' || record.type === 'load') && (
-                        <div style={{ marginTop: '1rem' }}>
-                            <label className="label">Portes/Reembolso</label>
-                            <input
-                                name="reembolso"
-                                value={formData.reembolso}
-                                onChange={handleChange}
-                                placeholder="e.g. 50,00"
-                            />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                            <div>
+                                <label className="label">Expected Reembolso</label>
+                                <input
+                                    name="reembolso"
+                                    value={formData.reembolso || ''}
+                                    onChange={handleChange}
+                                    placeholder="e.g. 50,00"
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Actually Collected</label>
+                                <input
+                                    name="collectedValue"
+                                    value={formData.collectedValue || ''}
+                                    onChange={handleChange}
+                                    placeholder="Actually received"
+                                />
+                            </div>
                         </div>
                     )}
 
