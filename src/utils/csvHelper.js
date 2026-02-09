@@ -1,18 +1,18 @@
 export const generateCSV = (records) => {
     const headers = [
-        "ID", "Date", "Time", "Type", "Status",
+        "ID", "Date", "CreatedAt", "Type", "Status",
         "Driver Name", "Driver ID",
         "Recipient", "Remittance",
         "Quantity", "Volumen",
         "Reembolso", "Collected Value",
-        "Portes", "Address", "Notes"
+        "Portes", "Address", "Session", "Observations"
     ];
 
     const rows = records.map(r => {
         return [
             r.id,
             r.date,
-            r.createdAt ? new Date(r.createdAt).toLocaleTimeString() : '',
+            r.createdAt || '',
             r.type,
             r.status,
             r.driverName || '',
@@ -21,11 +21,12 @@ export const generateCSV = (records) => {
             r.remittance || '',
             r.quantity || '',
             r.volumen || '',
-            r.reembolso || '', // Expected
-            r.collectedValue || '', // Actual
+            r.reembolso || '',
+            r.collectedValue || '',
             r.portes || '',
             r.address || '',
-            (r.notes || '').replace(/\n/g, ' ')
+            r.session || '',
+            (r.observations || '').replace(/\n/g, ' ')
         ].map(field => `"${String(field || '').replace(/"/g, '""')}"`).join(',');
     });
 
@@ -78,7 +79,7 @@ export const parseCSV = (csvText) => {
     const keyMap = {
         "ID": "id",
         "Date": "date",
-        "Time": "time", // Ignored on import usually, or parsed to createdAt
+        "CreatedAt": "createdAt",
         "Type": "type",
         "Status": "status",
         "Driver Name": "driverName",
@@ -91,7 +92,8 @@ export const parseCSV = (csvText) => {
         "Collected Value": "collectedValue",
         "Portes": "portes",
         "Address": "address",
-        "Notes": "notes"
+        "Session": "session",
+        "Observations": "observations"
     };
 
     return rows.slice(1).map(row => {
@@ -99,7 +101,10 @@ export const parseCSV = (csvText) => {
         headers.forEach((h, index) => {
             const key = keyMap[h];
             if (key) {
-                obj[key] = row[index] || '';
+                let val = row[index] || '';
+                // Type casting for numeric fields if needed
+                if (key === 'quantity') val = Number(val) || 0;
+                obj[key] = val;
             }
         });
         return obj;
