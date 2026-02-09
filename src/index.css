@@ -62,7 +62,8 @@ button {
   font-weight: 500;
   font-family: inherit;
   background-color: var(--primary);
-  color: #000000; /* Fixed for high contrast on orange */
+  color: var(--text-main);
+  /* Fixed for high contrast on orange */
   cursor: pointer;
   transition: all 0.25s;
 }
@@ -105,13 +106,16 @@ select:focus {
 
 .tabs {
   display: flex;
-  justify-content: flex-start; /* Better for scrolling */
+  justify-content: flex-start;
+  /* Better for scrolling */
   margin-bottom: 2rem;
   gap: 0.5rem;
-  overflow-x: auto; /* Enable horizontal scroll */
+  overflow-x: auto;
+  /* Enable horizontal scroll */
   padding: 0.5rem;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Hide scrollbar for clean look */
+  scrollbar-width: none;
+  /* Hide scrollbar for clean look */
 }
 
 .tabs::-webkit-scrollbar {
