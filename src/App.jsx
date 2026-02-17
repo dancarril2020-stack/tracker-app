@@ -19,7 +19,7 @@ function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState('loading');
 
   // --- BADGE STATE ---
-  const [badges, setBadges] = useState({ deliveries: 0, pickups: 0 });
+  const [badges, setBadges] = useState({ deliveries: 0, pickups: 0, loads: 0 });
 
   useEffect(() => {
     if (userRole === 'office' || userRole === 'backoffice') {
@@ -32,7 +32,10 @@ function AuthenticatedApp() {
   // --- BADGE LISTENER (DRIVER ONLY) ---
   useEffect(() => {
     if (userRole !== 'driver' || !currentUser) {
-      setBadges({ deliveries: 0, pickups: 0, loads: 0 });
+      setBadges(prev => {
+        if (prev.deliveries === 0 && prev.pickups === 0 && prev.loads === 0) return prev;
+        return { deliveries: 0, pickups: 0, loads: 0 };
+      });
       return;
     }
 

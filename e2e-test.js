@@ -1,7 +1,7 @@
-
 import puppeteer from 'puppeteer';
+import fs from 'fs';
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'http://localhost:5173';
 
 async function runTest() {
     console.log("Starting Bug Reproduction Test...");
@@ -16,14 +16,37 @@ async function runTest() {
         console.log(`Alert message: ${dialog.message()}`);
         await dialog.accept();
     });
-    page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+    page.on('console', async msg => {
+        const args = await Promise.all(msg.args().map(arg => arg.jsonValue()));
+        console.log('PAGE LOG:', msg.text(), args);
+    });
     page.on('pageerror', err => console.log('PAGE ERROR:', err.toString()));
+    page.on('requestfailed', request => {
+        console.log(`REQUEST FAILED: ${request.url()} ${request.failure() ? request.failure().errorText : ''}`);
+        // Log status if available
+        if (request.response()) {
+            console.log(`REQUEST FAILED STATUS: ${request.response().status()}`);
+        }
+    });
 
     try {
         // --- STEP 1: LOGIN AS OFFICE ---
         console.log("--- Step 1: Login as Office ---");
         await page.goto(BASE_URL);
-        await page.waitForSelector('input[type="email"]');
+
+        // Wait for body to ensure page loaded
+        await page.waitForSelector('body', { timeout: 10000 });
+        console.log("Page body loaded.");
+
+        try {
+            await page.waitForSelector('input[type="email"]', { timeout: 10000 });
+        } catch (e) {
+            console.log("TIMEOUT WAITING FOR EMAIL INPUT. Dumping HTML to file:");
+            const html = await page.content();
+            fs.writeFileSync('debug_failed_page.html', html);
+            console.log("HTML dumped to debug_failed_page.html");
+            throw e;
+        }
         await page.type('input[type="email"]', 'office@tvr.com');
         await page.type('input[type="password"]', 'password');
         await page.click('button[type="submit"]');
@@ -69,7 +92,17 @@ async function runTest() {
         await new Promise(r => setTimeout(r, 2000)); // Wait for write
 
         // --- STEP 3: LOGOUT ---
-        await page.click('header button'); // Logout is the only button in header usually
+        const buttons = await page.$$('header button');
+        // Find button that contains "Log Out"
+        let logoutBtn;
+        for (const btn of buttons) {
+            const text = await page.evaluate(el => el.textContent, btn);
+            if (text.includes("Log Out")) {
+                logoutBtn = btn;
+                break;
+            }
+        }
+        await logoutBtn.click();
         await page.waitForSelector('input[type="email"]');
 
         // --- STEP 4: LOGIN AS DRIVER ---
@@ -89,14 +122,22 @@ async function runTest() {
         }
 
         // Find the Card
-        await page.waitForXPath("//h3[contains(., 'Bug Reproduction Load')]", { timeout: 5000 });
-        const [cardTitle] = await page.$x("//h3[contains(., 'Bug Reproduction Load')]");
-        const card = await page.evaluateHandle(el => el.closest('.card'), cardTitle);
+        // Find the Card
+        console.log("Looking for card...");
+        const card = await page.waitForFunction(() => {
+            const h3s = Array.from(document.querySelectorAll('h3'));
+            const target = h3s.find(el => el.textContent.includes('Bug Reproduction Load'));
+            return target ? target.closest('.card') : null;
+        }, { timeout: 10000 });
 
-        // Click Edit
-        const editBtn = await card.$('button.secondary-button');
-        if (!editBtn) throw new Error("Edit button not found on card");
-        await editBtn.click();
+        // Get the edit button using evaluate to be safe
+        await page.evaluate(() => {
+            const h3s = Array.from(document.querySelectorAll('h3'));
+            const card = h3s.find(el => el.textContent.includes('Bug Reproduction Load')).closest('.card');
+            const buttons = Array.from(card.querySelectorAll('button'));
+            const editBtn = buttons.find(btn => btn.textContent.toLowerCase().includes('edit')) || buttons[buttons.length - 1];
+            editBtn.click();
+        });
         console.log("Clicked Edit Button.");
 
         // Wait for Modal and Save
