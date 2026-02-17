@@ -198,8 +198,9 @@ export default function DeliveryForm() {
                 session: load.session || activeSession, // Inherit or current
                 volumen: load.volumen || '',
                 expectedReembolso: load.reembolso || '',
-                collectedValue: collectedValue || '',
+                collectedValue: collectedValue || '0',
                 reembolso: collectedValue || load.reembolso || '',
+                status: 'delivered', // ADDED
                 address: load.address || '',
                 observations: cardObservations[load.id] || ''
             });
