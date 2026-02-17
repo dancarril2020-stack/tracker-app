@@ -88,49 +88,63 @@ export default function EditModal({ record, onClose, onUpdate }) {
 
             // Case A: Editing a DELIVERY -> Update the linked LOAD
             if (record.type === 'delivery') {
-                const q = query(
-                    collection(db, "records"),
-                    where("remittance", "==", formData.remittance),
-                    where("recipient", "==", formData.recipient),
-                    where("type", "==", "load"),
-                    where("driverId", "==", record.driverId),
-                    where("date", "==", record.date) // Scope to same day
-                );
-                const querySnapshot = await getDocs(q);
+                // If identifiers changed, we need to update TWO sets of loads:
+                // 1. The OLD ones (matching record.remittance/recipient) - they lost this delivery
+                // 2. The NEW ones (matching formData.remittance/recipient) - they gained/updated this delivery
 
-                for (const loadDoc of querySnapshot.docs) {
-                    const loadData = loadDoc.data();
+                const identifiersChanged = record.remittance !== formData.remittance || record.recipient !== formData.recipient;
 
-                    // Re-calculate TOTAL delivered for this load from scratch to be safe
-                    // We need to fetch ALL deliveries for this load to sum them up correctly
-                    const deliveriesQ = query(
+                const updateLoadCascade = async (remittance, recipient) => {
+                    const q = query(
                         collection(db, "records"),
-                        where("remittance", "==", formData.remittance),
-                        where("recipient", "==", formData.recipient),
-                        where("type", "==", "delivery"),
-                        where("date", "==", record.date) // Scope to same day
+                        where("type", "==", "load"),
+                        where("remittance", "==", remittance),
+                        where("recipient", "==", recipient),
+                        where("driverId", "==", record.driverId)
                     );
-                    const deliveriesSnap = await getDocs(deliveriesQ);
+                    const snapshot = await getDocs(q);
 
-                    // Sum all deliveries (Use the NEW value for the one we just edited)
-                    let totalDelivered = 0;
-                    deliveriesSnap.forEach(d => {
-                        if (d.id === record.id) {
-                            totalDelivered += newQty; // Use the new value we just saved
-                        } else {
-                            totalDelivered += Number(d.data().quantity || 0);
+                    for (const docSnap of snapshot.docs) {
+                        const loadData = docSnap.data();
+
+                        // Re-calculate deliveredQuantity for this load by summing ALL deliveries with these identifiers
+                        const qD = query(
+                            collection(db, "records"),
+                            where("type", "==", "delivery"),
+                            where("remittance", "==", remittance),
+                            where("recipient", "==", recipient)
+                        );
+                        const deliverySnap = await getDocs(qD);
+                        let totalDelivered = 0;
+                        deliverySnap.docs.forEach(d => {
+                            const data = d.data();
+                            // If this is the record we are CURRENTLY editing, use new quantity. 
+                            // Others use their stored quantity.
+                            const qty = (d.id === record.id) ? Number(formData.quantity || 0) : Number(data.quantity || 0);
+                            totalDelivered += qty;
+                        });
+
+                        const loadQty = Number(loadData.quantity || 0);
+                        let newStatus = 'delivered';
+                        if (totalDelivered === 0) {
+                            newStatus = (loadData.status === 'assigned_load') ? 'assigned_load' : 'pending';
                         }
-                    });
+                        else if (totalDelivered < loadQty) newStatus = 'incident_missing';
+                        else if (totalDelivered > loadQty) newStatus = 'incident_excess';
 
-                    const loadQty = Number(loadData.quantity || 0);
-                    let newStatus = 'delivered';
-                    if (totalDelivered < loadQty) newStatus = 'incident_missing';
-                    else if (totalDelivered > loadQty) newStatus = 'incident_excess';
+                        await updateDoc(doc(db, "records", docSnap.id), {
+                            deliveredQuantity: totalDelivered,
+                            status: newStatus
+                        });
+                    }
+                };
 
-                    await updateDoc(doc(db, "records", loadDoc.id), {
-                        status: newStatus,
-                        deliveredQuantity: totalDelivered
-                    });
+                // Update New (or current) loads
+                await updateLoadCascade(formData.remittance, formData.recipient);
+
+                // If changed, also cleanup Old loads
+                if (identifiersChanged) {
+                    await updateLoadCascade(record.remittance, record.recipient);
                 }
             }
 

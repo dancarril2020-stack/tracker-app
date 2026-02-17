@@ -148,7 +148,7 @@ export default function PickupTab() {
                 address: pickup.address,
                 session: pickup.session,
                 // New Data
-                collectedValue: collectedValue || '',
+                collectedValue: collectedValue || '0',
                 reembolso: collectedValue || pickup.reembolso || '', // Actual collection becomes the value
                 expectedReembolso: pickup.reembolso || '', // Keep track of expectation
                 completedAt: new Date().toISOString(),
@@ -182,7 +182,7 @@ export default function PickupTab() {
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
                 session: activeSession,
-                collectedValue: manualData.reembolso || '', // Manual entry implies collected
+                collectedValue: manualData.reembolso || '0', // Manual entry implies collected
                 expectedReembolso: manualData.reembolso || '',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
