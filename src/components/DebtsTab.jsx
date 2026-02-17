@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, query, where, getDocs, updateDoc, doc, onSnapshot } from '../firebase';
+import { db, collection, query, where, getDocs, updateDoc, doc, onSnapshot, getUsers } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
 
@@ -7,6 +7,18 @@ export default function DebtsTab() {
     const { currentUser, userRole } = useAuth();
     const [debts, setDebts] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [drivers, setDrivers] = useState([]);
+    const [selectedDriver, setSelectedDriver] = useState('all');
+    const [selectedDate, setSelectedDate] = useState(''); // Default empty shows all
+
+    // Fetch Drivers for Filter
+    useEffect(() => {
+        if (userRole === 'office' || userRole === 'backoffice') {
+            getUsers().then(allUsers => {
+                setDrivers(allUsers.filter(u => u.role === 'driver'));
+            });
+        }
+    }, [userRole]);
 
     // Fetch Debts (Real-time)
     useEffect(() => {
@@ -19,9 +31,14 @@ export default function DebtsTab() {
         const debtsRef = collection(db, "debts");
 
         if (userRole === 'office' || userRole === 'backoffice') {
-            // Fetch all pending debts
-            // Optionally we can fetch Paid history too, but let's stick to Pending for now for clarity
-            q = query(debtsRef);
+            const constraints = [];
+            if (selectedDriver !== 'all') {
+                constraints.push(where("driverId", "==", selectedDriver));
+            }
+            if (selectedDate) {
+                constraints.push(where("date", "==", selectedDate));
+            }
+            q = query(debtsRef, ...constraints);
         } else {
             // Driver sees their caused debts
             q = query(debtsRef, where("driverId", "==", currentUser.uid));
@@ -39,7 +56,7 @@ export default function DebtsTab() {
         });
 
         return () => unsubscribe();
-    }, [currentUser, userRole]);
+    }, [currentUser, userRole, selectedDriver, selectedDate]);
 
     const handleSettle = async (debt) => {
         if (userRole === 'driver') return; // Drivers cannot settle? Or maybe they can "Hand Over"? 
@@ -60,7 +77,10 @@ export default function DebtsTab() {
         }
     };
 
-    const totalPending = debts.filter(d => d.status === 'pending').reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
+    const totalPending = debts.filter(d => d.status === 'pending').reduce((acc, curr) => {
+        const val = parseFloat((curr.amount || "0").toString().replace(',', '.'));
+        return acc + (isNaN(val) ? 0 : val);
+    }, 0);
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
@@ -70,6 +90,42 @@ export default function DebtsTab() {
                 <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'white' }}>Total Pending Debt</h2>
                 <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>€ {totalPending.toFixed(2)}</div>
             </div>
+
+            {/* Filter Bar */}
+            {(userRole === 'office' || userRole === 'backoffice') && (
+                <div className="glass-panel" style={{ marginBottom: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                        <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Filter by Driver</label>
+                        <select
+                            value={selectedDriver}
+                            onChange={(e) => setSelectedDriver(e.target.value)}
+                            style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)' }}
+                        >
+                            <option value="all">All Drivers</option>
+                            {drivers.map(d => (
+                                <option key={d.uid} value={d.uid}>{d.name || d.email}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                        <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Filter by Date</label>
+                        <input
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)' }}
+                        />
+                        {selectedDate && (
+                            <button
+                                onClick={() => setSelectedDate('')}
+                                style={{ fontSize: '0.7rem', background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', textAlign: 'right' }}
+                            >
+                                Clear Date
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
 
             <div style={{ display: 'grid', gap: '1rem' }}>
                 {debts.map(debt => (
