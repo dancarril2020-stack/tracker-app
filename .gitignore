@@ -23,3 +23,13 @@ dist-ssr
 *.sln
 *.sw?
 .firebase/
+
+# Temporary Debug/Test files
+browser_logs.txt
+error_dump.*
+test-output.txt
+workflow_test_output*
+test-failure.png
+debug_cumulative.js
+migrate-tenant-ids.js
+seed-users.js
