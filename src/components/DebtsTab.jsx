@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, query, where, getDocs, updateDoc, doc, onSnapshot, getUsers } from '../firebase';
+import { db, collection, query, where, getDocs, updateDoc, doc, onSnapshot, getUsersByTenant } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
 
 export default function DebtsTab() {
-    const { currentUser, userRole } = useAuth();
+    const { currentUser, userRole, tenantId } = useAuth();
     const [debts, setDebts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [drivers, setDrivers] = useState([]);
@@ -14,7 +14,7 @@ export default function DebtsTab() {
     // Fetch Drivers for Filter
     useEffect(() => {
         if (userRole === 'office' || userRole === 'backoffice') {
-            getUsers().then(allUsers => {
+            getUsersByTenant(tenantId).then(allUsers => {
                 setDrivers(allUsers.filter(u => u.role === 'driver'));
             });
         }
@@ -31,7 +31,9 @@ export default function DebtsTab() {
         const debtsRef = collection(db, "debts");
 
         if (userRole === 'office' || userRole === 'backoffice') {
-            const constraints = [];
+            const constraints = [
+                where("tenantId", "==", tenantId || 'default')
+            ];
             if (selectedDriver !== 'all') {
                 constraints.push(where("driverId", "==", selectedDriver));
             }
@@ -40,8 +42,10 @@ export default function DebtsTab() {
             }
             q = query(debtsRef, ...constraints);
         } else {
-            // Driver sees their caused debts
-            q = query(debtsRef, where("driverId", "==", currentUser.uid));
+            q = query(debtsRef,
+                where("driverId", "==", currentUser.uid),
+                where("tenantId", "==", tenantId || 'default')
+            );
         }
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
