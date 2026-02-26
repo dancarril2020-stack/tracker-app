@@ -151,7 +151,12 @@ export default function LoadingTab({ onCompleteLoad }) {
                     reembolso: formData.reembolso || existingData.reembolso // Update if provided
                 });
 
-                await logAction(currentUser, ACTIONS.UPDATE, `Updated existing load for ${formData.recipient} (New Qty: ${newQuantity})`, existingDoc.id);
+                await logAction(
+                    currentUser,
+                    ACTIONS.UPDATE,
+                    `Updated existing load for ${formData.recipient} (Qty: ${existingData.quantity || 0} → ${newQuantity})`,
+                    existingDoc.id
+                );
             } else {
                 const newDoc = await addDoc(collection(db, "records"), {
                     type: 'load',

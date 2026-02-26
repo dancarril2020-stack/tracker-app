@@ -256,7 +256,7 @@ export default function AuditTab() {
                                                 {log.action}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '0.8rem 1rem' }}>
+                                        <td style={{ padding: '0.8rem 1rem', whiteSpace: 'pre-wrap', verticalAlign: 'top', lineHeight: '1.4' }}>
                                             {log.details}
                                             {log.recordId && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>ID: {log.recordId}</div>}
                                         </td>

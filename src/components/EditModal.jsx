@@ -49,10 +49,35 @@ export default function EditModal({ record, onClose, onUpdate }) {
         try {
             const recordRef = doc(db, "records", record.id);
 
+            // --- DIFF LOGIC FOR AUDIT ---
+            const fieldsToTrack = {
+                recipient: 'Recipient',
+                remittance: 'Remittance',
+                quantity: 'Quantity',
+                reembolso: 'Expected Reembolso',
+                collectedValue: 'Actually Collected',
+                address: 'Address',
+                observations: 'Observations',
+                session: 'Session'
+            };
+
+            const changes = [];
+            Object.keys(fieldsToTrack).forEach(key => {
+                const oldVal = (record[key] || '').toString().trim();
+                const newVal = (formData[key] || '').toString().trim();
+
+                if (oldVal !== newVal) {
+                    changes.push(`${fieldsToTrack[key]}: ${oldVal || '(empty)'} → ${newVal || '(empty)'}`);
+                }
+            });
+
+            const diffSummary = changes.length > 0 ? `\nChanges:\n• ${changes.join('\n• ')}` : ' (No data changed)';
+
             // Create Audit Entry (Internal to doc)
             const changeLog = {
                 modifiedAt: new Date().toISOString(),
                 modifiedBy: currentUser?.email || 'unknown',
+                changes: changes, // Optional: add the detailed transitions here too
                 previousState: {
                     recipient: record.recipient || '',
                     quantity: record.quantity || 0,
@@ -67,6 +92,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
 
             // Update Document
             await updateDoc(recordRef, {
+                // ... fields ...
                 recipient: formData.recipient || '',
                 remittance: formData.remittance || '',
                 quantity: formData.quantity || 0,
@@ -79,9 +105,14 @@ export default function EditModal({ record, onClose, onUpdate }) {
                 auditHistory: arrayUnion(changeLog)
             });
 
-            // LOG AUDIT (Centralized)
+            // LOG AUDIT (Detailed)
             const actionType = record.type === 'load' ? ACTIONS.EDIT_LOAD : ACTIONS.EDIT_DELIVERY;
-            await logAction(currentUser, actionType, `Edited ${record.type} record for ${formData.recipient}`, record.id);
+            await logAction(
+                currentUser,
+                actionType,
+                `Edited ${record.type} record for ${formData.recipient}${diffSummary}`,
+                record.id
+            );
 
             // --- CASCADE UPDATES FOR LOGIC CONSISTENCY ---
             const newQty = Number(formData.quantity || 0);
