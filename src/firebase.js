@@ -43,7 +43,7 @@ export const db = getFirestore(app);
  * Register a new user without signing out the current one.
  * Uses a secondary Firebase app instance to handle the sign-up.
  */
-export const registerUser = async (email, password, role, name) => {
+export const registerUser = async (email, password, role, name, tenantId = 'default') => {
     // Create a secondary app instance
     const secondaryApp = initializeApp(firebaseConfig, "Secondary");
     const secondaryAuth = getAuth(secondaryApp);
@@ -52,11 +52,12 @@ export const registerUser = async (email, password, role, name) => {
         const res = await createUserWithEmailAndPassword(secondaryAuth, email, password);
         const uid = res.user.uid;
 
-        // Store role and name in Firestore
+        // Store role, name and tenantId in Firestore
         await setDoc(doc(db, "users", uid), {
             email,
             role,
             name,
+            tenantId,
             createdAt: new Date().toISOString()
         });
 
@@ -64,7 +65,7 @@ export const registerUser = async (email, password, role, name) => {
         await signOut(secondaryAuth);
         await deleteApp(secondaryApp);
 
-        return { uid, email, role, name };
+        return { uid, email, role, name, tenantId };
     } catch (error) {
         // Clean up even on error
         await deleteApp(secondaryApp);
@@ -82,6 +83,20 @@ export const getUsers = async () => {
         return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
     } catch (error) {
         console.error("Error fetching users:", error);
+        return [];
+    }
+};
+
+/**
+ * Fetch users belonging to a specific tenant
+ */
+export const getUsersByTenant = async (tenantId) => {
+    try {
+        const q = query(collection(db, "users"), where("tenantId", "==", tenantId || 'default'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+    } catch (error) {
+        console.error("Error fetching users by tenant:", error);
         return [];
     }
 };

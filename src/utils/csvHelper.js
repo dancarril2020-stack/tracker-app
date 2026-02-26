@@ -110,3 +110,95 @@ export const parseCSV = (csvText) => {
         return obj;
     });
 };
+
+export const generateAuditCSV = (records) => {
+    const headers = [
+        "ID", "Timestamp", "Date", "Time", "User Name", "User Role", "Action", "Details", "Record ID", "Tenant ID"
+    ];
+
+    const rows = records.map(r => {
+        const dateObj = new Date(r.timestamp);
+        return [
+            r.id,
+            r.timestamp, // Raw ISO or Ms
+            dateObj.toLocaleDateString(),
+            dateObj.toLocaleTimeString(),
+            r.userName || '',
+            r.userRole || '',
+            r.action || '',
+            (r.details || '').replace(/\n/g, ' '),
+            r.recordId || '',
+            r.tenantId || ''
+        ].map(field => `"${String(field || '').replace(/"/g, '""')}"`).join(',');
+    });
+
+    return [headers.join(','), ...rows].join('\n');
+};
+
+export const parseAuditCSV = (csvText) => {
+    // Reuse tokenization logic or call a generic tokenizer if we refactored.
+    // For now, full implementation to be safe.
+    const rows = [];
+    let currentRow = [];
+    let currentCell = '';
+    let insideQuotes = false;
+
+    for (let i = 0; i < csvText.length; i++) {
+        const char = csvText[i];
+        const nextChar = csvText[i + 1];
+
+        if (char === '"') {
+            if (insideQuotes && nextChar === '"') {
+                currentCell += '"';
+                i++;
+            } else {
+                insideQuotes = !insideQuotes;
+            }
+        } else if (char === ',' && !insideQuotes) {
+            currentRow.push(currentCell);
+            currentCell = '';
+        } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+            if (char === '\r' && nextChar === '\n') i++;
+            if (currentRow.length > 0 || currentCell) {
+                currentRow.push(currentCell);
+                rows.push(currentRow);
+            }
+            currentRow = [];
+            currentCell = '';
+        } else {
+            currentCell += char;
+        }
+    }
+    if (currentRow.length > 0 || currentCell) {
+        currentRow.push(currentCell);
+        rows.push(currentRow);
+    }
+
+    if (rows.length < 2) return [];
+
+    const headers = rows[0];
+
+    // Map Headers to DB Keys
+    const keyMap = {
+        "User Name": "userName",
+        "User Role": "userRole",
+        "Action": "action",
+        "Details": "details",
+        "Record ID": "recordId",
+        "Tenant ID": "tenantId",
+        "Timestamp": "timestamp" // We need the raw timestamp for correct sorting
+    };
+
+    return rows.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((h, index) => {
+            const key = keyMap[h];
+            if (key) {
+                let val = row[index] || '';
+                obj[key] = val;
+            }
+        });
+        // Ensure timestamp is valid (number or string)
+        return obj;
+    });
+};

@@ -21,6 +21,7 @@ export function useAuth() {
 export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [userRole, setUserRole] = useState(null); // 'driver', 'office', 'backoffice'
+    const [tenantId, setTenantId] = useState(null); // Multi-tenant support
     const [loading, setLoading] = useState(true);
 
     // Time Lock Configuration (Disabled for Testing)
@@ -65,13 +66,15 @@ export function AuthProvider({ children }) {
                 if (docSnap.exists()) {
                     const userData = docSnap.data();
                     setUserRole(userData.role);
+                    setTenantId(userData.tenantId || 'default'); // fallback for existing users
 
                     // Role-based Time Check
                     if (userData.role === 'driver' && !isWithinWorkHours()) {
                         await logout();
                         alert("Session Locked: Access is allowed only between 08:00 and 20:30.");
                         setCurrentUser(null);
-                        setUserRole(null);
+                    setUserRole(null);
+                    setTenantId(null);
                     } else {
                         setCurrentUser({ ...user, ...userData });
                     }
@@ -108,6 +111,7 @@ export function AuthProvider({ children }) {
     const value = {
         currentUser,
         userRole,
+        tenantId,
         login,
         logout,
         registerUser

@@ -16,8 +16,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const usersToCreate = [
-    { email: "office@tvr.com", password: "password", role: "office", name: "Office Admin" },
-    { email: "danielcarril@tvr.com", password: "password123", role: "driver", name: "Daniel Carril" }
+    { email: "office_v11@tvr.com", password: "password", role: "backoffice", name: "Backoffice Admin" },
+    { email: "driver_v11@tvr.com", password: "password", role: "driver", name: "Driver V11" }
 ];
 
 async function seed() {
@@ -31,15 +31,12 @@ async function seed() {
                 name: u.name,
                 email: u.email,
                 role: u.role,
+                tenantId: "default",
                 createdAt: new Date().toISOString()
             });
             console.log(`Success for ${u.email}`);
         } catch (err) {
-            if (err.code === 'auth/email-already-in-use') {
-                console.log(`User ${u.email} already exists.`);
-            } else {
-                console.error(`Error for ${u.email}:`, err.message);
-            }
+            console.error(`Error for ${u.email}:`, err.message);
         }
     }
     process.exit(0);

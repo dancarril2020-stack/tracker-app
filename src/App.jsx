@@ -15,14 +15,17 @@ import ThemeToggle from './components/ThemeToggle';
 import DebtsTab from './components/DebtsTab';
 
 function AuthenticatedApp() {
-  const { currentUser, userRole, logout } = useAuth();
+  const { currentUser, userRole, logout, tenantId } = useAuth();
+  const isSuperAdmin = tenantId === 'admin';
   const [activeTab, setActiveTab] = useState('loading');
 
   // --- BADGE STATE ---
   const [badges, setBadges] = useState({ deliveries: 0, pickups: 0, loads: 0 });
 
   useEffect(() => {
-    if (userRole === 'office' || userRole === 'backoffice') {
+    if (isSuperAdmin) {
+      setActiveTab('users');
+    } else if (userRole === 'office' || userRole === 'backoffice') {
       setActiveTab('summary');
     } else if (userRole === 'driver') {
       setActiveTab('loading');
@@ -50,7 +53,8 @@ function AuthenticatedApp() {
       where("driverId", "==", currentUser.uid),
       where("date", "==", today),
       where("type", "==", "load"),
-      where("status", "==", "assigned_load") // NEW: Metric for "To Load"
+      where("status", "==", "assigned_load"),
+      where("tenantId", "==", tenantId || 'default')
     );
 
     // 2. Pending Pickups Badge
@@ -58,7 +62,8 @@ function AuthenticatedApp() {
       recordsRef,
       where("driverId", "==", currentUser.uid),
       where("type", "==", "pickup"),
-      where("status", "==", "assigned")
+      where("status", "==", "assigned"),
+      where("tenantId", "==", tenantId || 'default')
     );
 
     const unsubLoads = onSnapshot(qLoads, (snap) => {
@@ -123,37 +128,44 @@ function AuthenticatedApp() {
       </header>
 
       <div className="tabs">
-        <button
-          className={`tab-button ${activeTab === 'loading' ? 'active' : ''}`}
-          onClick={() => setActiveTab('loading')}
-          style={{ position: 'relative', overflow: 'visible' }}
-        >
-          Loads
-          <Badge count={badges.loads} />
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'delivery' ? 'active' : ''}`}
-          onClick={() => setActiveTab('delivery')}
-          style={{ position: 'relative', overflow: 'visible' }} // Allow badge overflow
-        >
-          Deliveries
-          <Badge count={badges.deliveries} />
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'pickup' ? 'active' : ''}`}
-          onClick={() => setActiveTab('pickup')}
-          style={{ position: 'relative', overflow: 'visible' }}
-        >
-          Pick-ups
-          <Badge count={badges.pickups} />
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
-          onClick={() => setActiveTab('summary')}
-        >
-          Summary
-        </button>
-        {(userRole === 'office' || userRole === 'backoffice') && (
+        {/* Operational Tabs - Hidden for Super Admin */}
+        {!isSuperAdmin && (
+          <>
+            <button
+              className={`tab-button ${activeTab === 'loading' ? 'active' : ''}`}
+              onClick={() => setActiveTab('loading')}
+              style={{ position: 'relative', overflow: 'visible' }}
+            >
+              Loads
+              <Badge count={badges.loads} />
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'delivery' ? 'active' : ''}`}
+              onClick={() => setActiveTab('delivery')}
+              style={{ position: 'relative', overflow: 'visible' }} // Allow badge overflow
+            >
+              Deliveries
+              <Badge count={badges.deliveries} />
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'pickup' ? 'active' : ''}`}
+              onClick={() => setActiveTab('pickup')}
+              style={{ position: 'relative', overflow: 'visible' }}
+            >
+              Pick-ups
+              <Badge count={badges.pickups} />
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
+              onClick={() => setActiveTab('summary')}
+            >
+              Summary
+            </button>
+          </>
+        )}
+
+        {/* Office/Backoffice Specific Tabs */}
+        {(userRole === 'office' || userRole === 'backoffice') && !isSuperAdmin && (
           <>
             <button
               className={`tab-button ${activeTab === 'debts' ? 'active' : ''}`}
@@ -162,15 +174,21 @@ function AuthenticatedApp() {
             >
               Debts 💸
             </button>
-            <button
-              className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
-              onClick={() => setActiveTab('users')}
-            >
-              Users
-            </button>
           </>
         )}
-        {userRole === 'backoffice' && (
+
+        {/* Users Tab - Visible to Office/Backoffice (and Super Admin via separate logic if needed, but here simple role check works as Super Admin is backoffice) */}
+        {(userRole === 'office' || userRole === 'backoffice') && (
+          <button
+            className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => setActiveTab('users')}
+          >
+            Users
+          </button>
+        )}
+
+        {/* Audit Tab - Backoffice Only (but NOT Super Admin, unless they want it) */}
+        {userRole === 'backoffice' && !isSuperAdmin && (
           <button
             className={`tab-button ${activeTab === 'audit' ? 'active' : ''}`}
             onClick={() => setActiveTab('audit')}

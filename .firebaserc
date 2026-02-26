@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "tracker-app-c6b36"
+    "default": "tracker-app-testenvironment",
+    "dev": "tracker-app-testenvironment",
+    "production": "tracker-app-c6b36"
   }
 }

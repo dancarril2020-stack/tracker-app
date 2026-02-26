@@ -26,10 +26,12 @@ export async function logAction(currentUser, action, details, recordId = null, m
         if (!currentUser) return; // Should not happen in auth'd app
 
         await addDoc(collection(db, 'audit_logs'), {
-            timestamp: new Date().toISOString(),
+            timestamp: Date.now(), // Store as number for easier range queries
+            userId: currentUser.uid,
             userEmail: currentUser.email,
             userName: currentUser.name || currentUser.email,
             userRole: currentUser.role || 'unknown',
+            tenantId: currentUser.tenantId || 'default', // Critical for isolation
             action,
             details,
             recordId,
