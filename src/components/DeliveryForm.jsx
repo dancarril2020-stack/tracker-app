@@ -1,13 +1,13 @@
 
 import React, { useState } from 'react';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers } from '../firebase';
+import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit';
 import { getCurrentSession } from '../utils/sessionHelper';
 
 import { useAuth } from '../contexts/AuthContext';
 
 export default function DeliveryForm() {
-    const { currentUser, userRole } = useAuth(); // Added userRole
+    const { currentUser, userRole, tenantId } = useAuth();
     const [viewMode, setViewMode] = useState('list'); // 'list' (default) or 'manual'
     const [activeSession, setActiveSession] = useState(getCurrentSession());
     const [pendingLoads, setPendingLoads] = useState([]);
@@ -35,7 +35,7 @@ export default function DeliveryForm() {
     React.useEffect(() => {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
-                const allUsers = await getUsers();
+                const allUsers = await getUsersByTenant(tenantId);
                 const driverList = allUsers.filter(u => u.role === 'driver');
                 setDrivers(driverList);
                 if (driverList.length > 0) {
@@ -65,7 +65,8 @@ export default function DeliveryForm() {
                 where("driverId", "==", currentUser.uid),
                 where("date", "==", today),
                 where("type", "==", "load"),
-                where("status", "==", "pending")
+                where("status", "==", "pending"),
+                where("tenantId", "==", tenantId || 'default')
             );
             const snapshot = await getDocs(q);
             const data = snapshot.docs ? snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
@@ -126,7 +127,7 @@ export default function DeliveryForm() {
             // And the original LOAD will updated.
 
             await addDoc(collection(db, "records"), {
-                type: 'delivery_failed', // Explicit type for clarity
+                type: 'delivery_failed',
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
                 recipient: failingLoad.recipient,
@@ -136,11 +137,12 @@ export default function DeliveryForm() {
                 reembolso: failingLoad.reembolso || '',
                 date: today,
                 createdAt: new Date().toISOString(),
-                session: failingLoad.session || activeSession, // Inherit from load or current
+                session: failingLoad.session || activeSession,
                 status: 'failed',
                 failureReason: failureReason,
                 linkedLoadId: failingLoad.id,
-                address: failingLoad.address || ''
+                address: failingLoad.address || '',
+                tenantId: failingLoad.tenantId || tenantId || 'default'
             });
 
             // 2. Update the Original Load Record
@@ -195,14 +197,15 @@ export default function DeliveryForm() {
                 quantity: load.quantity,
                 date: today,
                 createdAt: new Date().toISOString(),
-                session: load.session || activeSession, // Inherit or current
+                session: load.session || activeSession,
                 volumen: load.volumen || '',
                 expectedReembolso: load.reembolso || '',
                 collectedValue: collectedValue || '0',
                 reembolso: collectedValue || load.reembolso || '',
-                status: 'delivered', // ADDED
+                status: 'delivered',
                 address: load.address || '',
-                observations: cardObservations[load.id] || ''
+                observations: cardObservations[load.id] || '',
+                tenantId: load.tenantId || tenantId || 'default'
             });
 
             // 1.5 Check for Debt (Shortfall)
@@ -226,7 +229,8 @@ export default function DeliveryForm() {
                         driverName: currentUser.name || currentUser.email,
                         date: today,
                         createdAt: new Date().toISOString(),
-                        status: 'pending' // 'pending' | 'paid'
+                        tenantId: tenantId || 'default',
+                        status: 'pending'
                     });
 
                     await logAction(currentUser, ACTIONS.UPDATE, `Debt Created: €${shortfall.toFixed(2)} for ${load.recipient}`, load.id);
@@ -238,6 +242,8 @@ export default function DeliveryForm() {
                 status: 'delivered',
                 deliveredQuantity: load.quantity
             });
+
+            await logAction(currentUser, ACTIONS.DELIVER_ITEM, `Delivered ${load.quantity} units to ${load.recipient}`, deliveryRef.id);
 
             // Refresh list
             fetchPendingLoads();
@@ -258,8 +264,8 @@ export default function DeliveryForm() {
         setLoading(true);
         try {
             // 1. Save Delivery Record
-            await addDoc(collection(db, "records"), {
-                type: 'delivery', // Entrega
+            const deliveryRef = await addDoc(collection(db, "records"), {
+                type: 'delivery',
                 driverId: ((userRole === 'office' || userRole === 'backoffice') && selectedDriver) ? selectedDriver : currentUser.uid,
                 driverName: ((userRole === 'office' || userRole === 'backoffice') && selectedDriver) ?
                     (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || currentUser.email)
@@ -267,9 +273,12 @@ export default function DeliveryForm() {
                 ...formData,
                 session: activeSession,
                 status: 'delivered',
+                tenantId: tenantId || 'default',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
             });
+
+            await logAction(currentUser, ACTIONS.DELIVER_ITEM, `Manual Delivery registered for ${formData.recipient}`, deliveryRef.id);
 
             // 2. Auto-Link: Find and update 'Load' record to 'Delivered'
             // We search for a 'load' with the same remittance code created today (or recently)
@@ -318,291 +327,263 @@ export default function DeliveryForm() {
         setLoading(false);
     };
 
-    if (viewMode === 'list') {
-        return (
-            <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
+    return (
+        <>
+            {viewMode === 'list' ? (
+                <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
 
-                {/* Session Toggle Dropdown */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                    <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Session</label>
-                    <select
-                        value={activeSession}
-                        onChange={(e) => setActiveSession(e.target.value)}
-                        style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)' }}
-                    >
-                        <option value="morning">🌅 Morning (up to 13:30)</option>
-                        <option value="afternoon">🌇 Afternoon (after 13:30)</option>
-                    </select>
-                </div>
+                    {/* Session Toggle Dropdown */}
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <label className="label" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Session</label>
+                        <select
+                            value={activeSession}
+                            onChange={(e) => setActiveSession(e.target.value)}
+                            style={{ width: '100%', padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)' }}
+                        >
+                            <option value="morning">🌅 Morning (up to 13:30)</option>
+                            <option value="afternoon">🌇 Afternoon (after 13:30)</option>
+                        </select>
+                    </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h2>Pending Deliveries ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h2>
-                    <button
-                        onClick={() => setViewMode('manual')}
-                        className="secondary-button"
-                        style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                    >
-                        + Manually Register Delivery
-                    </button>
-                </div>
-
-                {/* Search Bar */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <input
-                        type="text"
-                        placeholder="Search by customer..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '1rem' }}
-                    />
-                </div>
-
-                {pendingLoads.filter(l => l.session === activeSession).length === 0 ? (
-                    <div className="glass-panel" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No pending loads found for this session.
-                        <br /><br />
-                        <button onClick={() => setViewMode('manual')} style={{ background: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)', padding: '0.5rem 1rem' }}>
-                            Register Manual Delivery
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <h2>Pending Deliveries ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h2>
+                        <button
+                            onClick={() => setViewMode('manual')}
+                            className="secondary-button"
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                        >
+                            + Manually Register Delivery
                         </button>
                     </div>
-                ) : (
-                    <div style={{ display: 'grid', gap: '1rem' }}>
-                        {pendingLoads.filter(record => {
-                            if (record.session !== activeSession) return false;
-                            if (!searchTerm) return true;
-                            return (record.recipient || '').toLowerCase().includes(searchTerm.toLowerCase().trim());
-                        }).map(record => (
-                            <div key={record.id} className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div>
-                                        <span style={{
-                                            textTransform: 'uppercase',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 'bold',
-                                            color: 'var(--text-muted)',
-                                            display: 'flex', alignItems: 'center', gap: '0.5rem'
-                                        }}>
-                                            LOAD
-                                            <span style={{ color: '#ef4444' }}>
-                                                (PENDING <span style={{ fontSize: '0.9em' }}>x{record.quantity}</span>)
-                                            </span>
-                                        </span>
-                                        <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
-                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                            Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
-                                        </div>
-                                        {record.address && (
-                                            <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
-                                                📍 {record.address}
-                                            </div>
-                                        )}
-                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                            <span style={{ color: '#f51519ff' }}>Notas:</span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
-                                        </div>
 
-                                    </div>
-
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>x{record.quantity}</div>
-                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                            {new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </div>
-                                        {record.reembolso && (
-                                            <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1.2rem', marginTop: '0.2rem' }}>
-                                                {record.reembolso} €
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-
-                                <div>
-                                    <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', alignItems: 'center', textAlign: 'right' }}>
-                                        <input
-                                            type="text"
-                                            placeholder="Add observations (e.g. left with neighbor)..."
-                                            value={cardObservations[record.id] || ''}
-                                            onChange={(e) => handleCardObsChange(record.id, e.target.value)}
-                                            style={{
-                                                width: '30%',
-                                                padding: '0.6rem',
-                                                fontSize: '0.9rem',
-                                                borderRadius: '6px',
-                                                border: '1px solid var(--border)',
-                                                background: 'var(--input-bg)',
-                                                color: 'var(--text-main)',
-                                                marginBottom: 0,
-                                                textAlign: 'left'
-                                            }}
-                                        />
-                                        <button
-                                            onClick={(e) => handleFailClick(e, record)}
-                                            style={{
-                                                padding: '0.3rem 1rem',
-                                                fontSize: '0.9rem',
-                                                background: 'transparent',
-                                                border: '1px solid #ef4444',
-                                                color: '#ef4444',
-                                                marginRight: '0.5rem',
-                                                marginLeft: '50%',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            Fail
-                                        </button>
-                                        <button
-                                            onClick={(e) => handleDeliverFromList(e, record)}
-                                            className="primary-button"
-                                            style={{ padding: '0.3rem 1rem', fontSize: '0.9rem' }}
-                                        >
-                                            Deliver
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )
-                }
-
-                {/* Fail Modal (duplicated for list mode legality or move outside conditional) */}
-                {
-                    failingLoad && (
-                        <div style={{
-                            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                            background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            zIndex: 1000, backdropFilter: 'blur(5px)'
-                        }}>
-                            <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: '#18181b', border: '1px solid #ef4444' }}>
-                                <h3 style={{ color: '#ef4444', marginTop: 0 }}>Report Delivery Failure</h3>
-                                <p style={{ color: 'var(--text-muted)' }}>
-                                    Recipient: <strong style={{ color: 'var(--text-main)' }}>{failingLoad.recipient}</strong>
-                                </p>
-                                <div style={{ margin: '1rem 0' }}>
-                                    <label className="label">Reason for Failure</label>
-                                    <textarea
-                                        value={failureReason}
-                                        onChange={(e) => setFailureReason(e.target.value)}
-                                        placeholder="e.g. Business Closed, Customer Rejected..."
-                                        style={{ width: '100%', minHeight: '80px', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '0.5rem' }}
-                                    />
-                                </div>
-                                <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <button
-                                        onClick={() => setFailingLoad(null)}
-                                        style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '0.5rem' }}
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={confirmFailDelivery}
-                                        style={{ flex: 1, background: '#ef4444', border: 'none', color: 'white', padding: '0.5rem', fontWeight: 'bold' }}
-                                    >
-                                        Confirm Failure
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )
-                }
-            </div >
-        );
-    }
-
-    return (
-        <div className="glass-panel animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <div style={{ marginBottom: '1rem' }}>
-                <button onClick={() => setViewMode('list')} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                    ← Back to List
-                </button>
-            </div>
-            <h2>Register Delivery (Entrega)</h2>
-            <form onSubmit={handleSubmitManual}>
-                {/* Driver Info and Selector */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                    <div style={{ textAlign: 'left' }}>
-                        <label className="label">Driver</label>
-                        {(userRole === 'office' || userRole === 'backoffice') ? (
-                            <select
-                                value={selectedDriver}
-                                onChange={(e) => setSelectedDriver(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '0.4rem',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    background: 'var(--input-bg)',
-                                    color: 'var(--text-main)'
-                                }}
-                            >
-                                {drivers.map(d => (
-                                    <option key={d.uid} value={d.uid}>
-                                        {d.name || d.email}
-                                    </option>
-                                ))}
-                            </select>
-                        ) : (
-                            <input value={currentUser.name || currentUser.email} disabled style={{ opacity: 0.7 }} />
-                        )}
-                    </div>
-                    <div style={{ textAlign: 'left' }}>
-                        <label className="label">Time</label>
-                        <input value={new Date().toLocaleTimeString()} disabled style={{ opacity: 0.7 }} />
-                    </div>
-                </div>
-
-                <div style={{ textAlign: 'left' }}>
-                    <label className="label">Recipient Name *</label>
-                    <input name="recipient" value={formData.recipient} onChange={handleChange} required />
-                </div>
-
-                <div style={{ textAlign: 'left', marginTop: '1rem' }}>
-                    <label className="label">Address / Location</label>
-                    <input name="address" value={formData.address} onChange={handleChange} placeholder="Optional delivery address..." />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div style={{ textAlign: 'left' }}>
-                        <label className="label">Remittance *</label>
-                        <input name="remittance" value={formData.remittance} onChange={handleChange} required />
-                    </div>
-                    <div style={{ textAlign: 'left' }}>
-                        <label className="label">Quantity</label>
-                        <input name="quantity" type="number" value={formData.quantity} onChange={handleChange} />
-                    </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div style={{ textAlign: 'left' }}>
-                        <label className="label">Reembolso (Numbers/Comma)</label>
+                    {/* Search Bar */}
+                    <div style={{ marginBottom: '1rem' }}>
                         <input
-                            name="reembolso"
-                            value={formData.reembolso}
-                            onChange={handleChange}
-                            placeholder="e.g. 50,00"
+                            type="text"
+                            placeholder="Search by customer..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '1rem' }}
                         />
                     </div>
-                    <div style={{ textAlign: 'left' }}>
-                        <label className="label">Volumen/Missing/etc</label>
-                        <input name="volumen" value={formData.volumen} onChange={handleChange} />
+
+                    {pendingLoads.filter(l => l.session === activeSession).length === 0 ? (
+                        <div className="glass-panel" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                            No pending loads found for this session.
+                            <br /><br />
+                            <button onClick={() => setViewMode('manual')} style={{ background: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)', padding: '0.5rem 1rem' }}>
+                                Register Manual Delivery
+                            </button>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: '1rem' }}>
+                            {pendingLoads.filter(record => {
+                                if (record.session !== activeSession) return false;
+                                if (!searchTerm) return true;
+                                return (record.recipient || '').toLowerCase().includes(searchTerm.toLowerCase().trim());
+                            }).map(record => (
+                                <div key={record.id} className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <span style={{
+                                                textTransform: 'uppercase',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 'bold',
+                                                color: 'var(--text-muted)',
+                                                display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                            }}>
+                                                LOAD
+                                                <span style={{ color: '#ef4444' }}>
+                                                    (PENDING <span style={{ fontSize: '0.9em' }}>x{record.quantity}</span>)
+                                                </span>
+                                            </span>
+                                            <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
+                                            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                                                Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
+                                            </div>
+                                            {record.address && (
+                                                <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                                                    📍 {record.address}
+                                                </div>
+                                            )}
+                                            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                                                <span style={{ color: '#f51519ff' }}>Notas:</span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
+                                            </div>
+
+                                        </div>
+
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>x{record.quantity}</div>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                {new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                            {record.reembolso && (
+                                                <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1.2rem', marginTop: '0.2rem' }}>
+                                                    {record.reembolso} €
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+
+                                    <div>
+                                        <div style={{
+                                            marginTop: '1rem',
+                                            paddingTop: '0.5rem',
+                                            borderTop: '1px solid var(--border)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.8rem',
+                                            justifyContent: 'space-between'
+                                        }}>
+                                            <input
+                                                type="text"
+                                                placeholder="Add observations..."
+                                                value={cardObservations[record.id] || ''}
+                                                onChange={(e) => handleCardObsChange(record.id, e.target.value)}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '0.6rem',
+                                                    fontSize: '0.9rem',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--border)',
+                                                    background: 'var(--input-bg)',
+                                                    color: 'var(--text-main)',
+                                                    marginBottom: 0,
+                                                    textAlign: 'left',
+                                                    minWidth: '0' // Prevents flex item from overflowing
+                                                }}
+                                            />
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                                                <button
+                                                    onClick={(e) => handleFailClick(e, record)}
+                                                    style={{
+                                                        padding: '0.3rem 1rem',
+                                                        fontSize: '0.9rem',
+                                                        background: 'transparent',
+                                                        border: '1px solid #ef4444',
+                                                        color: '#ef4444',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    Fail
+                                                </button>
+                                                <button
+                                                    onClick={(e) => handleDeliverFromList(e, record)}
+                                                    className="primary-button"
+                                                    style={{ padding: '0.3rem 1rem', fontSize: '0.9rem' }}
+                                                >
+                                                    Deliver
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="glass-panel animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto' }}>
+                    <div style={{ marginBottom: '1rem' }}>
+                        <button onClick={() => setViewMode('list')} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                            ← Back to List
+                        </button>
                     </div>
+                    <h2>Register Delivery (Entrega)</h2>
+                    <form onSubmit={handleSubmitManual}>
+                        {/* Driver Info and Selector */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                            <div style={{ textAlign: 'left' }}>
+                                <label className="label">Driver</label>
+                                {(userRole === 'office' || userRole === 'backoffice') ? (
+                                    <select
+                                        value={selectedDriver}
+                                        onChange={(e) => setSelectedDriver(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.4rem',
+                                            border: '1px solid var(--border)',
+                                            borderRadius: '4px',
+                                            background: 'var(--input-bg)',
+                                            color: 'var(--text-main)'
+                                        }}
+                                    >
+                                        {drivers.map(d => (
+                                            <option key={d.uid} value={d.uid}>
+                                                {d.name || d.email}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input value={currentUser.name || currentUser.email} disabled style={{ opacity: 0.7 }} />
+                                )}
+                            </div>
+                            <div style={{ textAlign: 'left' }}>
+                                <label className="label">Time</label>
+                                <input value={new Date().toLocaleTimeString()} disabled style={{ opacity: 0.7 }} />
+                            </div>
+                        </div>
+
+                        <div style={{ textAlign: 'left' }}>
+                            <label className="label">Recipient Name *</label>
+                            <input name="recipient" value={formData.recipient} onChange={handleChange} required />
+                        </div>
+
+                        <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+                            <label className="label">Address / Location</label>
+                            <input name="address" value={formData.address} onChange={handleChange} placeholder="Optional delivery address..." />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div style={{ textAlign: 'left' }}>
+                                <label className="label">Remittance *</label>
+                                <input name="remittance" value={formData.remittance} onChange={handleChange} required />
+                            </div>
+                            <div style={{ textAlign: 'left' }}>
+                                <label className="label">Quantity</label>
+                                <input name="quantity" type="number" value={formData.quantity} onChange={handleChange} />
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div style={{ textAlign: 'left' }}>
+                                <label className="label">Reembolso (Numbers/Comma)</label>
+                                <input
+                                    name="reembolso"
+                                    value={formData.reembolso}
+                                    onChange={handleChange}
+                                    placeholder="e.g. 50,00"
+                                />
+                            </div>
+                            <div style={{ textAlign: 'left' }}>
+                                <label className="label">Volumen/Missing/etc</label>
+                                <input name="volumen" value={formData.volumen} onChange={handleChange} />
+                            </div>
+                        </div>
+
+                        <div style={{ textAlign: 'left' }}>
+                            <label className="label">Observations</label>
+                            <input name="observations" value={formData.observations} onChange={handleChange} placeholder="Notes for the summary..." />
+                        </div>
+
+                        <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '1rem' }}>
+                            {loading ? 'Saving...' : 'Register Delivery'}
+                        </button>
+                    </form>
                 </div>
+            )}
 
-                <div style={{ textAlign: 'left' }}>
-                    <label className="label">Observations</label>
-                    <input name="observations" value={formData.observations} onChange={handleChange} placeholder="Notes for the summary..." />
-                </div>
-
-                <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '1rem' }}>
-                    {loading ? 'Saving...' : 'Register Delivery'}
-                </button>
-            </form>
-
+            {/* Fail Modal - Moved OUTSIDE of transforming containers and pinned to TOP */}
             {failingLoad && (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    zIndex: 1000, backdropFilter: 'blur(5px)'
+                    background: 'rgba(0,0,0,0.8)', display: 'flex',
+                    alignItems: 'flex-start', // Pin to top
+                    justifyContent: 'center',
+                    paddingTop: '3rem', // Add space from the very top
+                    zIndex: 2000,
+                    backdropFilter: 'blur(5px)'
                 }}>
                     <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: '#18181b', border: '1px solid #ef4444' }}>
                         <h3 style={{ color: '#ef4444', marginTop: 0 }}>Report Delivery Failure</h3>
@@ -635,6 +616,6 @@ export default function DeliveryForm() {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }

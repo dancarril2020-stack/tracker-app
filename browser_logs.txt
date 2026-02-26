@@ -1,0 +1,6 @@
+[vite] connecting...
+[vite] connected.
+%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o
+[DEBUG] LoadingTab: Found 0 assigned loads for driver uP6UfuApZQaqy291BbojwQBujZt2
+[DEBUG] LoadingTab: Found 1 assigned loads for driver uP6UfuApZQaqy291BbojwQBujZt2

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsers, updateDoc, setDoc } from '../firebase';
+import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsersByTenant, updateDoc, setDoc } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 import { generateCSV, parseCSV } from '../utils/csvHelper'; // Import CSV helper
 
@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import EditModal from './EditModal';
 
 export default function DeliverySummary() {
-    const { currentUser, userRole } = useAuth();
+    const { currentUser, userRole, tenantId } = useAuth();
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [summaryDate, setSummaryDate] = useState(new Date().toISOString().split('T')[0]);
@@ -27,9 +27,8 @@ export default function DeliverySummary() {
 
     useEffect(() => {
         async function fetchDrivers() {
-            // Fetch Drivers on mount if user is office
             if (userRole === 'office' || userRole === 'backoffice') {
-                const allUsers = await getUsers();
+                const allUsers = await getUsersByTenant(tenantId);
                 setDrivers(allUsers.filter(u => u.role === 'driver'));
             }
         }
@@ -48,7 +47,10 @@ export default function DeliverySummary() {
 
             // Role Logic: Office sees all (or filtered). Driver sees only their own.
             if (userRole === 'office' || userRole === 'backoffice') {
-                const constraints = [where("date", "==", summaryDate)];
+                const constraints = [
+                    where("date", "==", summaryDate),
+                    where("tenantId", "==", tenantId || 'default')
+                ];
 
                 if (selectedDriver !== 'all') {
                     constraints.push(where("driverId", "==", selectedDriver));
@@ -59,7 +61,8 @@ export default function DeliverySummary() {
                 q = query(
                     recordsRef,
                     where("date", "==", summaryDate),
-                    where("driverId", "==", currentUser.uid)
+                    where("driverId", "==", currentUser.uid),
+                    where("tenantId", "==", tenantId || 'default')
                 );
             }
 
@@ -87,9 +90,8 @@ export default function DeliverySummary() {
                     collection(db, "records"),
                     where("type", "==", "load"),
                     where("remittance", "==", record.remittance),
-                    where("recipient", "==", record.recipient)
-                    // We don't filter by date strictly as load might be from previous day, 
-                    // but typically we are looking for the active load.
+                    where("recipient", "==", record.recipient),
+                    where("tenantId", "==", tenantId || 'default')
                 );
                 const snapshot = await getDocs(q);
 
@@ -183,6 +185,7 @@ export default function DeliverySummary() {
                     }
                 }
                 alert(`Successfully imported ${count} records.`);
+                await logAction(currentUser, ACTIONS.UPDATE, `Imported ${count} records from CSV`, null);
                 fetchRecords(); // Refresh view
             } catch (err) {
                 console.error(err);
@@ -204,6 +207,7 @@ export default function DeliverySummary() {
                 status: 'pending', // Transitions to 'Loaded' list (and 'Pending' execution)
                 loadedAt: new Date().toISOString()
             });
+            await logAction(currentUser, ACTIONS.UPDATE, `Driver loaded items for ${load.recipient} (from Summary)`, load.id);
             fetchRecords(); // Refresh
         } catch (err) {
             console.error(err);
@@ -363,15 +367,14 @@ export default function DeliverySummary() {
 
                     {/* EXPORT / IMPORT ACTIONS (Office Only) */}
                     {(userRole === 'office' || userRole === 'backoffice') && (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                             <button
                                 onClick={handleExport}
                                 className="secondary-button"
-                                style={{ fontSize: '0.7rem', padding: '0.4rem 0.8rem', backgroundColor: 'white' }}
                             >
                                 ⬇️ Export CSV
                             </button>
-                            <label className="secondary-button" style={{ fontSize: '0.7rem', padding: '0.4rem 0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <label className="secondary-button" style={{ cursor: 'pointer' }}>
                                 ⬆️ Import CSV
                                 <input
                                     type="file"

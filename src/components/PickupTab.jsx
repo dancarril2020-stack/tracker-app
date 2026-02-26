@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers } from '../firebase';
+import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
+import { logAction, ACTIONS } from '../utils/audit'; // Added audit logging
 
 export default function PickupTab() {
-    const { currentUser, userRole } = useAuth();
+    const { currentUser, userRole, tenantId } = useAuth();
     const [loading, setLoading] = useState(false);
     const [activeSession, setActiveSession] = useState(getCurrentSession());
 
@@ -45,7 +46,7 @@ export default function PickupTab() {
     }, [userRole, currentUser]);
 
     const fetchDrivers = async () => {
-        const allUsers = await getUsers();
+        const allUsers = await getUsersByTenant(tenantId);
         const driverList = allUsers.filter(u => u.role === 'driver');
         setDrivers(driverList);
         if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
@@ -83,17 +84,19 @@ export default function PickupTab() {
         setLoading(true);
         try {
             const driverObj = drivers.find(d => d.uid === selectedDriver);
-            await addDoc(collection(db, "records"), {
+            const assignRef = await addDoc(collection(db, "records"), {
                 type: 'pickup',
-                status: 'assigned', // NEW STATUS
+                status: 'assigned',
                 driverId: selectedDriver,
                 driverName: driverObj ? (driverObj.name || driverObj.email) : 'Unknown',
                 ...assignData,
                 session: assignData.session || activeSession,
+                tenantId: tenantId || 'default',
                 assignedAt: new Date().toISOString(),
                 createdAt: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0] // Assignment date
+                date: new Date().toISOString().split('T')[0]
             });
+            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Assigned Pickup to ${driverObj?.name || driverObj?.email || 'Unknown'} for ${assignData.recipient}`, assignRef.id);
             alert("Pickup Assigned Successfully!");
             setAssignData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
         } catch (err) {
@@ -118,26 +121,18 @@ export default function PickupTab() {
 
         setLoading(true);
         try {
-            // 1. Mark the ASSIGNMENT as 'completed_assignment' (or similar)
-            // This hides it from the Driver's "Assigned" list but keeps the record for the Summary tab
-            // We'll update the status so it's clear it's no longer "pending assignment"
-            // Wait, if we change status to 'completed_assignment', does Summary tab filter it?
-            // Summary tab shows 'pickup' type. 
-            // If we want the "ASSIGNED" card to REMAIN in Summary as a record of the assignment, we should just update its status 
-            // to something that effectively removes it from Driver's active list
-            // PickupTab uses: where("status", "==", "assigned")
-            // So ANY other status removes it from the list.
-
+            const today = new Date().toISOString().split('T')[0];
             const recordRef = doc(db, "records", pickup.id);
+
+            // 1. Mark the ASSIGNMENT as 'assignment_complete'
             await updateDoc(recordRef, {
-                status: 'assignment_complete' // New status: preserved as history
+                status: 'assignment_complete'
             });
 
             // 2. Create a NEW record for the ACTUAL PICKUP (Result)
-            // This generates the second card "PICK UP DONE"
-            await addDoc(collection(db, "records"), {
+            const pickupResult = await addDoc(collection(db, "records"), {
                 type: 'pickup',
-                status: 'completed_pickup', // Green card
+                status: 'completed_pickup',
                 driverId: pickup.driverId,
                 driverName: pickup.driverName,
                 recipient: pickup.recipient,
@@ -147,14 +142,40 @@ export default function PickupTab() {
                 portes: pickup.portes,
                 address: pickup.address,
                 session: pickup.session,
-                // New Data
+                tenantId: pickup.tenantId || tenantId || 'default',
                 collectedValue: collectedValue || '0',
-                reembolso: collectedValue || pickup.reembolso || '', // Actual collection becomes the value
-                expectedReembolso: pickup.reembolso || '', // Keep track of expectation
+                reembolso: collectedValue || pickup.reembolso || '',
+                expectedReembolso: pickup.reembolso || '',
                 completedAt: new Date().toISOString(),
                 createdAt: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0]
+                date: today
             });
+
+            // 3. Check for Debt (Shortfall)
+            const expectedVal = parseFloat((pickup.reembolso || "0").toString().replace(',', '.'));
+            const collectedVal = parseFloat((collectedValue || "0").toString().replace(',', '.'));
+
+            if (!isNaN(expectedVal) && expectedVal > 0) {
+                const shortfall = expectedVal - (isNaN(collectedVal) ? 0 : collectedVal);
+                if (shortfall > 0.05) {
+                    await addDoc(collection(db, "debts"), {
+                        recipient: pickup.recipient,
+                        remittance: pickup.remittance,
+                        amount: shortfall.toFixed(2),
+                        originalLoadId: pickup.id,
+                        deliveryId: pickupResult.id, // Linking to the pickup result
+                        driverId: currentUser.uid,
+                        driverName: currentUser.name || currentUser.email,
+                        date: today,
+                        createdAt: new Date().toISOString(),
+                        tenantId: tenantId || 'default',
+                        status: 'pending'
+                    });
+                    await logAction(currentUser, ACTIONS.UPDATE, `Debt Created (Pickup): €${shortfall.toFixed(2)} for ${pickup.recipient}`, pickup.id);
+                }
+            }
+
+            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Completed pickup from ${pickup.recipient}`, pickupResult.id);
 
             fetchAssignedPickups(); // Refresh list
         } catch (err) {
@@ -175,18 +196,20 @@ export default function PickupTab() {
         e.preventDefault();
         setLoading(true);
         try {
-            await addDoc(collection(db, "records"), {
+            const pickupRef = await addDoc(collection(db, "records"), {
                 type: 'pickup',
-                status: 'completed_pickup', // Manual ones are immediately done
+                status: 'completed_pickup',
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
                 session: activeSession,
-                collectedValue: manualData.reembolso || '0', // Manual entry implies collected
+                tenantId: tenantId || 'default',
+                collectedValue: manualData.reembolso || '0',
                 expectedReembolso: manualData.reembolso || '',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
             });
+            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Manual Pickup registered from ${manualData.recipient}`, pickupRef.id);
             alert("Manual Pickup Registered!");
             setManualData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
             setViewMode('list');

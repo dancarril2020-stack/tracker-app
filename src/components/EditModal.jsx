@@ -193,96 +193,103 @@ export default function EditModal({ record, onClose, onUpdate }) {
         <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000, backdropFilter: 'blur(5px)'
+            zIndex: 1000, backdropFilter: 'blur(3px)',
+            padding: '10px'
         }}>
-            <div className="glass-panel" style={{ width: '90%', maxWidth: '500px', background: '#18181b' }}>
-                <h3>Edit Record</h3>
-                <form onSubmit={handleSubmit}>
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label className="label">Recipient</label>
-                        <input name="recipient" value={formData.recipient} onChange={handleChange} />
+            <div className="glass-panel" style={{
+                width: '95%',
+                maxWidth: '600px',
+                background: '#18181b',
+                padding: '1.2rem',
+                border: '1px solid var(--border)'
+            }}>
+                <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>Edit Record</h3>
+                <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
+
+                    <div style={{ gridColumn: 'span 2' }}>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Recipient</label>
+                        <input name="recipient" value={formData.recipient} onChange={handleChange} style={{ padding: '0.5rem' }} />
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div>
-                            <label className="label">Remittance</label>
-                            <input name="remittance" value={formData.remittance} onChange={handleChange} />
-                        </div>
-                        <div>
-                            <label className="label">Quantity</label>
-                            <input name="quantity" value={formData.quantity} onChange={handleChange} />
-                        </div>
+
+                    <div>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Remittance</label>
+                        <input name="remittance" value={formData.remittance} onChange={handleChange} style={{ padding: '0.5rem' }} />
                     </div>
-                    <div style={{ marginTop: '1rem' }}>
-                        <label className="label">Volumen/Missing/Damage</label>
+                    <div>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Quantity</label>
+                        <input name="quantity" value={formData.quantity} onChange={handleChange} style={{ padding: '0.5rem' }} />
+                    </div>
+
+                    <div>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Volumen / Notes</label>
                         <input
                             name="volumen"
                             value={formData.volumen || ''}
                             onChange={handleChange}
-                            placeholder="Add notes about volume, damage, or missing items"
+                            style={{ padding: '0.5rem' }}
                         />
                     </div>
-
-                    <div style={{ marginTop: '1rem' }}>
-                        <label className="label">Address / Location</label>
+                    <div>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Address / Location</label>
                         <input
                             name="address"
                             value={formData.address || ''}
                             onChange={handleChange}
-                            placeholder="Optional delivery address..."
+                            style={{ padding: '0.5rem' }}
                         />
                     </div>
 
-                    <div style={{ marginTop: '1rem' }}>
-                        <label className="label">Driver Observations</label>
+                    <div style={{ gridColumn: 'span 2' }}>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Driver Observations</label>
                         <input
                             name="observations"
                             value={formData.observations || ''}
                             onChange={handleChange}
-                            placeholder="Driver notes (e.g. left at gate)..."
+                            style={{ padding: '0.5rem' }}
                         />
                     </div>
 
                     {(record.type === 'delivery' || record.type === 'pickup' || record.type === 'load') && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                        <>
                             <div>
-                                <label className="label">Expected Reembolso</label>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Expected Reembolso</label>
                                 <input
                                     name="reembolso"
                                     value={formData.reembolso || ''}
                                     onChange={handleChange}
-                                    placeholder="e.g. 50,00"
+                                    style={{ padding: '0.5rem' }}
                                 />
                             </div>
                             <div>
-                                <label className="label">Actually Collected</label>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Actually Collected</label>
                                 <input
                                     name="collectedValue"
                                     value={formData.collectedValue || ''}
                                     onChange={handleChange}
-                                    placeholder="Actually received"
+                                    style={{ padding: '0.5rem' }}
                                 />
                             </div>
-                        </div>
+                        </>
                     )}
 
-                    <div style={{ marginTop: '1rem' }}>
-                        <label className="label">Session</label>
+                    <div style={{ gridColumn: 'span 2' }}>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Session</label>
                         <select
                             name="session"
                             value={formData.session || 'morning'}
                             onChange={handleChange}
-                            style={{ width: '100%', padding: '0.8rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
+                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
                         >
                             <option value="morning">🌅 Morning</option>
                             <option value="afternoon">🌇 Afternoon</option>
                         </select>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                        <button type="button" onClick={onClose} style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', gridColumn: 'span 2' }}>
+                        <button type="button" onClick={onClose} style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', padding: '0.6rem' }}>
                             Cancel
                         </button>
-                        <button type="submit" disabled={loading} style={{ flex: 1 }}>
+                        <button type="submit" disabled={loading} style={{ flex: 1, padding: '0.6rem' }}>
                             {loading ? 'Saving...' : 'Save Changes'}
                         </button>
                     </div>

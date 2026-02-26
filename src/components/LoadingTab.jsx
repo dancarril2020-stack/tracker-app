@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsers, onSnapshot } from '../firebase';
+import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant, onSnapshot } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
+import { logAction, ACTIONS } from '../utils/audit';
 import EditModal from './EditModal';
 
 export default function LoadingTab({ onCompleteLoad }) {
-    const { currentUser, userRole } = useAuth();
+    const { currentUser, userRole, tenantId } = useAuth();
 
     // UI State
     const [viewMode, setViewMode] = useState('assigned'); // 'assigned' | 'loaded'
@@ -49,7 +50,7 @@ export default function LoadingTab({ onCompleteLoad }) {
     useEffect(() => {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
-                const allUsers = await getUsers();
+                const allUsers = await getUsersByTenant(tenantId);
                 const driverList = allUsers.filter(u => u.role === 'driver');
                 setDrivers(driverList);
                 if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
@@ -74,7 +75,8 @@ export default function LoadingTab({ onCompleteLoad }) {
             recordsRef,
             where("driverId", "==", targetDriverId),
             where("date", "==", today),
-            where("type", "in", ["load", "delivery", "delivery_failed"])
+            where("type", "in", ["load", "delivery", "delivery_failed"]),
+            where("tenantId", "==", tenantId || 'default')
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -91,10 +93,11 @@ export default function LoadingTab({ onCompleteLoad }) {
             setAssignedLoads(assigned);
             setLoadedLoads(matchedLoaded);
             setAllDailyRecords(allRecords);
+            console.log(`[DEBUG] LoadingTab: Found ${assigned.length} assigned loads for driver ${targetDriverId}`);
         });
 
         return () => unsubscribe();
-    }, [selectedDriver, currentUser, userRole]);
+    }, [selectedDriver, currentUser, userRole, tenantId]);
 
     // --- 3. ACTIONS ---
 
@@ -131,7 +134,8 @@ export default function LoadingTab({ onCompleteLoad }) {
                 where("type", "==", "load"),
                 where("recipient", "==", formData.recipient),
                 where("remittance", "==", formData.remittance),
-                where("status", "==", statusToFind)
+                where("status", "==", statusToFind),
+                where("tenantId", "==", tenantId || 'default')
             );
 
             const querySnapshot = await getDocs(q);
@@ -146,17 +150,22 @@ export default function LoadingTab({ onCompleteLoad }) {
                     volumen: formData.volumen ? `${existingData.volumen || ''} + ${formData.volumen}` : existingData.volumen,
                     reembolso: formData.reembolso || existingData.reembolso // Update if provided
                 });
+
+                await logAction(currentUser, ACTIONS.UPDATE, `Updated existing load for ${formData.recipient} (New Qty: ${newQuantity})`, existingDoc.id);
             } else {
-                await addDoc(collection(db, "records"), {
+                const newDoc = await addDoc(collection(db, "records"), {
                     type: 'load',
                     driverId: targetDriverId,
                     driverName: targetDriverName,
                     ...formData,
                     session: activeSession, // Save the active session
                     status: statusToFind,
+                    tenantId: tenantId || 'default',
                     createdAt: new Date().toISOString(),
                     date: today
                 });
+
+                await logAction(currentUser, ACTIONS.LOAD_ITEM, `Registered load for ${formData.recipient} (${formData.quantity} units)`, newDoc.id);
             }
 
             setFormData({ recipient: '', remittance: '', quantity: '', volumen: '', reembolso: '', address: '' });
@@ -175,6 +184,7 @@ export default function LoadingTab({ onCompleteLoad }) {
                 status: 'pending',
                 loadedAt: new Date().toISOString()
             });
+            await logAction(currentUser, ACTIONS.UPDATE, `Driver loaded items for ${load.recipient}`, load.id);
         } catch (err) {
             console.error(err);
             alert("Error updating load: " + err.message);
@@ -274,63 +284,99 @@ export default function LoadingTab({ onCompleteLoad }) {
                 </select>
             </div>
 
+            {/* View Toggle */}
+            <div className="glass-panel" style={{ display: 'flex', padding: '0.3rem', gap: '0.5rem', marginBottom: '1.5rem', background: 'rgba(0,0,0,0.2)' }}>
+                <button
+                    onClick={() => setViewMode('assigned')}
+                    style={{
+                        flex: 1,
+                        padding: '0.5rem',
+                        background: viewMode === 'assigned' ? 'var(--primary)' : 'transparent',
+                        color: viewMode === 'assigned' ? 'black' : 'var(--text-muted)',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }}
+                >
+                    Waiting Load
+                </button>
+                <button
+                    onClick={() => setViewMode('loaded')}
+                    style={{
+                        flex: 1,
+                        padding: '0.5rem',
+                        background: viewMode === 'loaded' ? 'var(--primary)' : 'transparent',
+                        color: viewMode === 'loaded' ? 'black' : 'var(--text-muted)',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }}
+                >
+                    On Truck (Loaded)
+                </button>
+            </div>
+
             {/* View: Assigned */}
             {viewMode === 'assigned' && (
                 <div className="animate-fade-in">
-                    <div className="glass-panel" style={{ marginBottom: '1rem', border: '1px solid var(--primary)' }}>
-                        <h3 style={{ marginTop: 0 }}>+ New Assignment ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h3>
-                        <form onSubmit={handleSubmit}>
+                    {(userRole === 'office' || userRole === 'backoffice') && (
+                        <div className="glass-panel" style={{ marginBottom: '1rem', border: '1px solid var(--primary)' }}>
+                            <h3 style={{ marginTop: 0 }}>+ New Assignment ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h3>
+                            <form onSubmit={handleSubmit}>
 
-                            {/* Driver Selector for Office (Inside form as requested) */}
-                            {(userRole === 'office' || userRole === 'backoffice') && (
+                                {/* Driver Selector for Office (Inside form as requested) */}
+                                {(userRole === 'office' || userRole === 'backoffice') && (
+                                    <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
+                                        <label className="label">Assign to Driver</label>
+                                        <select
+                                            value={selectedDriver}
+                                            onChange={(e) => setSelectedDriver(e.target.value)}
+                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
+                                        >
+                                            {drivers.map(d => (
+                                                <option key={d.uid} value={d.uid}>{d.name || d.email}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
                                 <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
-                                    <label className="label">Assign to Driver</label>
-                                    <select
-                                        value={selectedDriver}
-                                        onChange={(e) => setSelectedDriver(e.target.value)}
-                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
-                                    >
-                                        {drivers.map(d => (
-                                            <option key={d.uid} value={d.uid}>{d.name || d.email}</option>
-                                        ))}
-                                    </select>
+                                    <label className="label">Recipient Name *</label>
+                                    <input name="recipient" value={formData.recipient} onChange={handleChange} required />
                                 </div>
-                            )}
 
-                            <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
-                                <label className="label">Recipient Name *</label>
-                                <input name="recipient" value={formData.recipient} onChange={handleChange} required />
-                            </div>
-
-                            <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
-                                <label className="label">Address / Location</label>
-                                <input name="address" value={formData.address} onChange={handleChange} placeholder="Optional delivery address..." />
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                                <div style={{ textAlign: 'left' }}>
-                                    <label className="label">Remittance *</label>
-                                    <input name="remittance" value={formData.remittance} onChange={handleChange} required />
+                                <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
+                                    <label className="label">Address / Location</label>
+                                    <input name="address" value={formData.address} onChange={handleChange} placeholder="Optional delivery address..." />
                                 </div>
-                                <div style={{ textAlign: 'left' }}>
-                                    <label className="label">Quantity</label>
-                                    <input name="quantity" type="number" value={formData.quantity} onChange={handleChange} />
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <label className="label">Remittance *</label>
+                                        <input name="remittance" value={formData.remittance} onChange={handleChange} required />
+                                    </div>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <label className="label">Quantity</label>
+                                        <input name="quantity" type="number" value={formData.quantity} onChange={handleChange} />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
-                                <label className="label">Portes / Reembolso (€)</label>
-                                <input name="reembolso" type="number" step="0.01" value={formData.reembolso} onChange={handleChange} placeholder="0.00" />
-                            </div>
+                                <div style={{ textAlign: 'left', marginBottom: '1rem' }}>
+                                    <label className="label">Portes / Reembolso (€)</label>
+                                    <input name="reembolso" type="number" step="0.01" value={formData.reembolso} onChange={handleChange} placeholder="0.00" />
+                                </div>
 
-                            <div style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
-                                <label className="label">Volumen/Missing/Damage</label>
-                                <input name="volumen" value={formData.volumen} onChange={handleChange} placeholder="e.g. 2 pallets" />
-                            </div>
+                                <div style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
+                                    <label className="label">Volumen/Missing/Damage</label>
+                                    <input name="volumen" value={formData.volumen} onChange={handleChange} placeholder="e.g. 2 pallets" />
+                                </div>
 
-                            <button type="submit" disabled={loading} style={{ width: '100%' }}>Register Load</button>
-                        </form>
-                    </div>
+                                <button type="submit" disabled={loading} style={{ width: '100%' }}>Register Load</button>
+                            </form>
+                        </div>
+                    )}
 
                     <div style={{ display: 'grid', gap: '1rem' }}>
                         {assignedLoads.filter(l => l.session === activeSession).map(record => renderCard(record))}

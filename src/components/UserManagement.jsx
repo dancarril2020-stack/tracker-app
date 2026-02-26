@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { registerUser, getUsers } from '../firebase';
+import { registerUser, getUsers, getUsersByTenant } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { logAction, ACTIONS } from '../utils/audit';
 
 export default function UserManagement() {
+    const { tenantId } = useAuth();
+    const isSuperAdmin = tenantId === 'admin';
     const [users, setUsers] = useState([]);
     const [formData, setFormData] = useState({
         name: '',
         email: '',
         password: '',
-        role: 'driver'
+        role: 'driver',
+        role: 'driver',
+        tenantId: tenantId === 'admin' ? '' : tenantId
     });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -20,7 +26,7 @@ export default function UserManagement() {
 
     async function loadUsers() {
         try {
-            const userList = await getUsers();
+            const userList = isSuperAdmin ? await getUsers() : await getUsersByTenant(tenantId);
             setUsers(userList);
         } catch (err) {
             console.error("Error loading users:", err);
@@ -35,9 +41,19 @@ export default function UserManagement() {
         setLoading(true);
 
         try {
-            await registerUser(formData.email, formData.password, formData.role, formData.name);
+            await registerUser(formData.email, formData.password, formData.role, formData.name, formData.tenantId);
+
+            // LOG AUDIT (Manual creation)
+            await logAction({ ...formData, uid: 'new-user' }, ACTIONS.CREATE_ITEM, `Created user: ${formData.email} (${formData.role})`, null, { targetTenant: formData.tenantId });
+
             setSuccess(`User ${formData.name} created successfully!`);
-            setFormData({ ...formData, name: '', email: '', password: '' }); // Reset fields
+            setFormData({
+                name: '',
+                email: '',
+                password: '',
+                role: 'driver',
+                tenantId: isSuperAdmin ? formData.tenantId : tenantId // Keep current tenantId selection for admin, or reset for client
+            });
             await loadUsers(); // Refresh list
         } catch (err) {
             setError(err.message);
@@ -101,8 +117,24 @@ export default function UserManagement() {
                         </select>
                     </div>
 
+
+
+                    {isSuperAdmin && (
+                        <div className="form-group">
+                            <label>Tenant ID <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(e.g. client-a, client-b)</span></label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g. client-a"
+                                value={formData.tenantId}
+                                onChange={e => setFormData({ ...formData, tenantId: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
+                            />
+                        </div>
+                    )}
+
                     {error && <div style={{ color: '#ef4444' }}>{error}</div>}
                     {success && <div style={{ color: '#22c55e' }}>{success}</div>}
+
 
                     <button type="submit" className="primary-button">
                         Create User
@@ -126,6 +158,9 @@ export default function UserManagement() {
                             <div>
                                 <div style={{ fontWeight: 'bold' }}>{user.name}</div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{user.email}</div>
+                                {user.tenantId && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '0.2rem' }}>🏢 {user.tenantId}</div>
+                                )}
                             </div>
                             <span style={{
                                 textTransform: 'uppercase',
