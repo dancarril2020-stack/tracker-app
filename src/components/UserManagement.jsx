@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { registerUser, getUsers, getUsersByTenant } from '../firebase';
+import { registerUser, getUsers, getUsersByTenant, updateUserStatus } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
 
@@ -55,6 +55,27 @@ export default function UserManagement() {
                 tenantId: isSuperAdmin ? formData.tenantId : tenantId // Keep current tenantId selection for admin, or reset for client
             });
             await loadUsers(); // Refresh list
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function handleToggleStatus(user) {
+        if (!window.confirm(`Are you sure you want to ${user.active !== false ? 'Deactivate' : 'Reactivate'} ${user.name}?`)) return;
+
+        setLoading(true);
+        try {
+            const newStatus = !(user.active !== false);
+            await updateUserStatus(user.uid, newStatus);
+
+            // LOG AUDIT
+            const actionMsg = newStatus ? `Reactivated user: ${user.email}` : `Deactivated user: ${user.email}`;
+            await logAction(currentUser, ACTIONS.UPDATE, actionMsg, user.uid);
+
+            setSuccess(`User status updated successfully.`);
+            await loadUsers();
         } catch (err) {
             setError(err.message);
         } finally {
@@ -162,16 +183,32 @@ export default function UserManagement() {
                                     <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '0.2rem' }}>🏢 {user.tenantId}</div>
                                 )}
                             </div>
-                            <span style={{
-                                textTransform: 'uppercase',
-                                fontSize: '0.75rem',
-                                padding: '0.2rem 0.6rem',
-                                borderRadius: '12px',
-                                background: user.role === 'office' ? '#3b82f6' : user.role === 'backoffice' ? '#a855f7' : '#22c55e',
-                                color: 'white'
-                            }}>
-                                {user.role}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <span style={{
+                                    textTransform: 'uppercase',
+                                    fontSize: '0.75rem',
+                                    padding: '0.2rem 0.6rem',
+                                    borderRadius: '12px',
+                                    background: user.active === false ? '#64748b' : (user.role === 'office' ? '#3b82f6' : user.role === 'backoffice' ? '#a855f7' : '#22c55e'),
+                                    color: 'white'
+                                }}>
+                                    {user.active === false ? 'INACTIVE' : user.role}
+                                </span>
+
+                                <button
+                                    onClick={() => handleToggleStatus(user)}
+                                    className="secondary-button"
+                                    style={{
+                                        padding: '0.3rem 0.8rem',
+                                        fontSize: '0.75rem',
+                                        minWidth: '100px',
+                                        borderColor: user.active === false ? 'var(--primary)' : '#ef4444',
+                                        color: user.active === false ? 'var(--primary)' : '#ef4444'
+                                    }}
+                                >
+                                    {user.active === false ? 'Reactivate' : 'Deactivate'}
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>

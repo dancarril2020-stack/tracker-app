@@ -51,7 +51,7 @@ export default function LoadingTab({ onCompleteLoad }) {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
                 const allUsers = await getUsersByTenant(tenantId);
-                const driverList = allUsers.filter(u => u.role === 'driver');
+                const driverList = allUsers.filter(u => u.role === 'driver' && u.active !== false);
                 setDrivers(driverList);
                 if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
             } else {

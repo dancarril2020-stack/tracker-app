@@ -73,9 +73,18 @@ export function AuthProvider({ children }) {
                         await logout();
                         alert("Session Locked: Access is allowed only between 08:00 and 20:30.");
                         setCurrentUser(null);
-                    setUserRole(null);
-                    setTenantId(null);
-                    } else {
+                        setUserRole(null);
+                        setTenantId(null);
+                    }
+                    // ENFORCE ACTIVE STATUS (Soft Delete)
+                    else if (userData.active === false) {
+                        await logout();
+                        alert("Access Denied: Your account has been deactivated. Please contact your administrator.");
+                        setCurrentUser(null);
+                        setUserRole(null);
+                        setTenantId(null);
+                    }
+                    else {
                         setCurrentUser({ ...user, ...userData });
                     }
                 } else {

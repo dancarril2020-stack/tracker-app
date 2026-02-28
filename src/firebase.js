@@ -58,6 +58,7 @@ export const registerUser = async (email, password, role, name, tenantId = 'defa
             role,
             name,
             tenantId,
+            active: true, // Default to active
             createdAt: new Date().toISOString()
         });
 
@@ -98,6 +99,19 @@ export const getUsersByTenant = async (tenantId) => {
     } catch (error) {
         console.error("Error fetching users by tenant:", error);
         return [];
+    }
+};
+
+/**
+ * Toggle user active status (Soft Delete)
+ */
+export const updateUserStatus = async (uid, active) => {
+    try {
+        await updateDoc(doc(db, "users", uid), { active });
+        return true;
+    } catch (error) {
+        console.error("Error updating user status:", error);
+        throw error;
     }
 };
 
