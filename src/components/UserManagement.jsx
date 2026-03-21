@@ -202,8 +202,9 @@ export default function UserManagement() {
                                         padding: '0.3rem 0.8rem',
                                         fontSize: '0.75rem',
                                         minWidth: '100px',
-                                        borderColor: user.active === false ? 'var(--primary)' : '#ef4444',
-                                        color: user.active === false ? 'var(--primary)' : '#ef4444'
+                                        borderColor: user.active === false ? 'var(--border)' : 'white',
+                                        color: user.active === false ? 'var(--text-main)' : 'var(--text-main)',
+                                        background: user.active === false ? 'var(--border)' : 'var(--border)'
                                     }}
                                 >
                                     {user.active === false ? 'Reactivate' : 'Deactivate'}
