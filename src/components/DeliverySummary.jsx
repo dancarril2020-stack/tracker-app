@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsersByTenant, updateDoc, setDoc } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 import { generateCSV, parseCSV } from '../utils/csvHelper'; // Import CSV helper
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 import { useAuth } from '../contexts/AuthContext';
 import EditModal from './EditModal';
@@ -198,6 +200,67 @@ export default function DeliverySummary() {
         reader.readAsText(file);
     };
 
+    const handleExportPDF = () => {
+        const doc = new jsPDF();
+
+        let subTitle = `Session: ${selectedSession} | Driver: ${selectedDriver === 'all' ? 'All' : drivers.find(d => d.uid === selectedDriver)?.name || selectedDriver}`;
+
+        doc.setFontSize(16);
+        doc.text(`Daily Report - ${summaryDate}`, 14, 15);
+        doc.setFontSize(10);
+        doc.text(subTitle, 14, 22);
+
+        const tableData = displayRecords.map((r, index) => {
+            const time = new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            let typeString = r.type.toUpperCase();
+            if (r.type === 'pickup' && (r.status === 'assigned' || r.status === 'assignment_complete')) typeString += ' (ASSIGNED)';
+            else if (r.type === 'pickup' && r.status !== 'assigned') typeString += ' (DONE)';
+            else if (r.type === 'load' && r.status === 'assigned_load') typeString += ' (WAITING LOAD)';
+            else if (r.status === 'pending') typeString += ' (PENDING)';
+            else if (r.status === 'incident_missing') typeString += ' (MISSING)';
+            else if (r.status === 'incident_excess') typeString += ' (SURPLUS)';
+            else if (r.status === 'delivery_failed') typeString += ' (FAILED)';
+
+            const refund = `€ ${(r.collectedValue || r.reembolso || 0)}`;
+
+            const col1 = [
+                `${r.quantity || '-'} | ${r.recipient || ''}`,
+                r.address ? `Address: ${r.address}` : '',
+                `Time: ${time} | Driver: ${r.driverName || '-'} | Assigned By: ${r.assignedByName || '-'}`
+            ].filter(Boolean).join('\n');
+
+            const col2 = [
+                r.remittance ? `Ref: ${r.remittance}` : '',
+                r.volumen ? `Notes: ${r.volumen}` : '',
+                (r.observations || r.failureReason) ? `Obs: ${r.observations || r.failureReason}` : ''
+            ].filter(Boolean).join('\n');
+
+            return [
+                col1,
+                col2,
+                refund,
+                typeString
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 28,
+            head: [['Details', 'References & Notes', 'Reembolso', 'Type / Status']],
+            body: tableData,
+            theme: 'striped',
+            styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak', textColor: [40, 40, 40], lineColor: [200, 200, 200], lineWidth: 0.1 },
+            headStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: 'bold' },
+            columnStyles: {
+                0: { cellWidth: 80 },
+                1: { cellWidth: 60 },
+                2: { cellWidth: 20 },
+                3: { cellWidth: 25 }
+            }
+        });
+
+        doc.save(`TVR_Report_${summaryDate}.pdf`);
+    };
+
     // --- LOAD Action for Driver in Summary ---
     const handleLoadAction = async (load) => {
         if (!window.confirm(`Confirm loading: ${load.recipient}?`)) return;
@@ -369,12 +432,19 @@ export default function DeliverySummary() {
                     {(userRole === 'office' || userRole === 'backoffice') && (
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                             <button
+                                onClick={handleExportPDF}
+                                className="secondary-button"
+                            >
+                                📄 Download PDF
+                            </button>
+                            <button
                                 onClick={handleExport}
                                 className="secondary-button"
+                                style={{ backgroundColor: 'var(--surface)' }}
                             >
                                 ⬇️ Export CSV
                             </button>
-                            <label className="secondary-button" style={{ cursor: 'pointer' }}>
+                            <label className="secondary-button" style={{ cursor: 'pointer', backgroundColor: 'var(--surface)' }}>
                                 ⬆️ Import CSV
                                 <input
                                     type="file"
