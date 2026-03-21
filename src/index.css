@@ -74,23 +74,6 @@ button:hover {
   box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
 }
 
-.secondary-button {
-  background-color: white !important;
-  color: #0f172a !important;
-  font-size: 0.75rem !important;
-  padding: 0.5rem 1rem !important;
-  border: 1px solid var(--border) !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 0.4rem !important;
-  line-height: 1 !important;
-}
-
-.secondary-button:hover {
-  background-color: #f1f5f9 !important;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
-}
-
 input,
 select {
   background-color: var(--input-bg);
@@ -123,30 +106,35 @@ select:focus {
 
 .tabs {
   display: flex;
-  justify-content: flex-start;
-  /* Better for scrolling */
+  flex-wrap: wrap;
+  /* Allow wrapping to next line */
+  justify-content: center;
+  /* Center buttons */
   margin-bottom: 2rem;
-  gap: 0.5rem;
-  overflow-x: auto;
-  /* Enable horizontal scroll */
-  padding: 0.5rem;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  /* Hide scrollbar for clean look */
+  gap: 0.6rem;
+  padding: 0;
+  width: 100%;
 }
 
 .tabs::-webkit-scrollbar {
   display: none;
 }
 
-@media (min-width: 640px) {
-  .tabs {
-    justify-content: center;
-    overflow-x: visible;
+@media (max-width: 640px) {
+  .tab-button {
+    padding: 0.5rem 0.8rem;
+    /* More compact on mobile */
+    font-size: 0.85rem;
+    flex: 1 1 auto;
+    /* Grow to fill space but allow wrapping */
+    min-width: 100px;
   }
 }
 
 .tab-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  /* Keep label on one line */
   background: transparent;
   color: var(--text-main);
   border: 1px solid rgba(99, 102, 241, 0.2);
