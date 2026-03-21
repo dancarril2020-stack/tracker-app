@@ -621,12 +621,12 @@ export default function DeliverySummary() {
                             </div>
 
                             <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: record.type === 'delivery' ? '#22c55e' : '#ef4444' }}>x{record.quantity}</div>
+                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: (record.type === 'delivery' || (record.type === 'pickup' && record.status !== 'assigned')) ? '#22c55e' : '#ef4444' }}>x{record.quantity}</div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                                     {new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                                 {record.reembolso && (
-                                    <div style={{ marginTop: '0.5rem', color: (record.type === 'delivery' && (record.collectedValue ? record.collectedValue !== '0' : record.reembolso !== '0')) ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
+                                    <div style={{ marginTop: '0.5rem', color: ((record.type === 'delivery' || (record.type === 'pickup' && record.status !== 'assigned')) && (record.collectedValue ? record.collectedValue !== '0' : record.reembolso !== '0')) ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
                                         € {record.collectedValue || record.reembolso}
                                     </div>
                                 )}
