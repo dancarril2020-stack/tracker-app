@@ -59,7 +59,8 @@ export default function PickupTab() {
                 collection(db, "records"),
                 where("driverId", "==", currentUser.uid),
                 where("type", "==", "pickup"),
-                where("status", "==", "assigned") // Fetch only pending assignments
+                where("status", "==", "assigned"), // Fetch only pending assignments
+                where("tenantId", "==", tenantId || 'default')
             );
             const snapshot = await getDocs(q);
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
