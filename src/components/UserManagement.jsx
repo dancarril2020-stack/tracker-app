@@ -17,7 +17,7 @@ export default function UserManagement() {
     });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-
+    const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -82,6 +82,19 @@ export default function UserManagement() {
             setLoading(false);
         }
     }
+
+    // Filter and sort users by role
+    const rolePriority = { backoffice: 1, office: 2, driver: 3 };
+    const filteredAndSortedUsers = users
+        .filter(u =>
+            (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => {
+            const pA = rolePriority[a.role] || 4;
+            const pB = rolePriority[b.role] || 4;
+            return pA - pB;
+        });
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
@@ -165,9 +178,18 @@ export default function UserManagement() {
 
             {/* User List */}
             < div className="glass-panel" >
-                <h3 style={{ marginTop: 0 }}>Existing Users</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                    <h3 style={{ margin: 0 }}>Existing Users</h3>
+                    <input
+                        type="text"
+                        placeholder="Search by name or email..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{ padding: '0.6rem', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-main)', width: '250px' }}
+                    />
+                </div>
                 <div style={{ display: 'grid', gap: '0.8rem' }}>
-                    {users.map((user, idx) => (
+                    {filteredAndSortedUsers.map((user, idx) => (
                         <div key={idx} style={{
                             padding: '1rem',
                             background: 'rgba(255,255,255,0.05)',
