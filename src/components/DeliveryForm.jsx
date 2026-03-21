@@ -409,6 +409,11 @@ export default function DeliveryForm() {
                                             <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                                                 <span style={{ color: '#f51519ff' }}>Notas:</span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
                                             </div>
+                                            {record.assignedByName && (
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.1rem', fontStyle: 'italic' }}>
+                                                    Assigned by: {record.assignedByName}
+                                                </div>
+                                            )}
 
                                         </div>
 

@@ -95,7 +95,8 @@ export default function PickupTab() {
                 tenantId: tenantId || 'default',
                 assignedAt: new Date().toISOString(),
                 createdAt: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0]
+                date: new Date().toISOString().split('T')[0],
+                assignedByName: currentUser.name || currentUser.email
             });
             await logAction(currentUser, ACTIONS.CREATE_ITEM, `Assigned Pickup to ${driverObj?.name || driverObj?.email || 'Unknown'} for ${assignData.recipient}`, assignRef.id);
             alert("Pickup Assigned Successfully!");
@@ -339,6 +340,11 @@ export default function PickupTab() {
                                         {pickup.address && <div style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.25rem' }}>📍 {pickup.address}</div>}
                                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Ref: {pickup.remittance}</div>
                                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Notes: {pickup.volumen}</div>
+                                        {pickup.assignedByName && (
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.1rem', fontStyle: 'italic' }}>
+                                                Assigned by: {pickup.assignedByName}
+                                            </div>
+                                        )}
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
                                         <div style={{ fontWeight: 'bold' }}>x{pickup.quantity || '-'}</div>

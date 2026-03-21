@@ -618,6 +618,11 @@ export default function DeliverySummary() {
                                         Driver: {record.driverName}
                                     </div>
                                 )}
+                                {record.assignedByName && (
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.1rem', fontStyle: 'italic' }}>
+                                        Assigned by: {record.assignedByName}
+                                    </div>
+                                )}
                             </div>
 
                             <div style={{ textAlign: 'right' }}>

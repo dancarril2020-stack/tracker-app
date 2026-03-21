@@ -167,7 +167,8 @@ export default function LoadingTab({ onCompleteLoad }) {
                     status: statusToFind,
                     tenantId: tenantId || 'default',
                     createdAt: new Date().toISOString(),
-                    date: today
+                    date: today,
+                    assignedByName: (userRole === 'office' || userRole === 'backoffice') ? (currentUser.name || currentUser.email) : null
                 });
 
                 await logAction(currentUser, ACTIONS.LOAD_ITEM, `Registered load for ${formData.recipient} (${formData.quantity} units)`, newDoc.id);
@@ -239,6 +240,11 @@ export default function LoadingTab({ onCompleteLoad }) {
                     {record.volumen && (
                         <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                             <span style={{ color: '#f51519ff' }}>Notas: </span> <span style={{ color: 'var(--text-main)' }}>{record.volumen}</span>
+                        </div>
+                    )}
+                    {record.assignedByName && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.1rem', fontStyle: 'italic' }}>
+                            Assigned by: {record.assignedByName}
                         </div>
                     )}
                 </div>
