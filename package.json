@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "firebase": "^12.7.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "puppeteer": "^24.34.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
