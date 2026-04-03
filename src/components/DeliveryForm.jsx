@@ -398,9 +398,14 @@ export default function DeliveryForm() {
                                                 </span>
                                             </span>
                                             <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
-                                            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                                Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                Remittance: <span style={{ color: 'var(--text-main)' }}>{record.supplierName || record.remittance}</span>
                                             </div>
+                                            {record.supplierReference && (
+                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                    Factura/Ref.: <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>{record.supplierReference}</span>
+                                                </div>
+                                            )}
                                             {record.address && (
                                                 <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
                                                     📍 {record.address}
