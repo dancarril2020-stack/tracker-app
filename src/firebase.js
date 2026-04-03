@@ -53,14 +53,16 @@ export const registerUser = async (email, password, role, name, tenantId = 'defa
         const uid = res.user.uid;
 
         // Store role, name and tenantId in Firestore
-        await setDoc(doc(db, "users", uid), {
+        const userData = {
             email,
             role,
             name,
             tenantId,
             active: true, // Default to active
             createdAt: new Date().toISOString()
-        });
+        };
+
+        await setDoc(doc(db, "users", uid), userData);
 
         // Sign out of the secondary instance and delete the app
         await signOut(secondaryAuth);

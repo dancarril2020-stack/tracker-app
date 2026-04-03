@@ -12,7 +12,6 @@ export default function UserManagement() {
         email: '',
         password: '',
         role: 'driver',
-        role: 'driver',
         tenantId: tenantId === 'admin' ? '' : tenantId
     });
     const [error, setError] = useState('');
@@ -52,7 +51,7 @@ export default function UserManagement() {
                 email: '',
                 password: '',
                 role: 'driver',
-                tenantId: isSuperAdmin ? formData.tenantId : tenantId // Keep current tenantId selection for admin, or reset for client
+                tenantId: isSuperAdmin ? formData.tenantId : tenantId
             });
             await loadUsers(); // Refresh list
         } catch (err) {
@@ -148,18 +147,17 @@ export default function UserManagement() {
                             <option value="driver">Driver</option>
                             <option value="office">Office</option>
                             <option value="backoffice">Backoffice</option>
+                            {isSuperAdmin && <option value="supplier">Supplier</option>}
                         </select>
                     </div>
 
-
-
                     {isSuperAdmin && (
                         <div className="form-group">
-                            <label>Tenant ID <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(e.g. client-a, client-b)</span></label>
+                            <label>Tenant ID / Company Name <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(e.g. tvr, amazon)</span></label>
                             <input
                                 type="text"
                                 required
-                                placeholder="e.g. client-a"
+                                placeholder="e.g. amazon-logistics"
                                 value={formData.tenantId}
                                 onChange={e => setFormData({ ...formData, tenantId: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
                             />

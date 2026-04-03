@@ -13,6 +13,8 @@ import UserManagement from './components/UserManagement';
 import AuditTab from './components/AuditTab';
 import ThemeToggle from './components/ThemeToggle';
 import DebtsTab from './components/DebtsTab';
+import SupplierDashboard from './components/SupplierDashboard';
+import InboundTab from './components/InboundTab';
 
 function AuthenticatedApp() {
   const { currentUser, userRole, logout, tenantId } = useAuth();
@@ -25,6 +27,8 @@ function AuthenticatedApp() {
   useEffect(() => {
     if (isSuperAdmin) {
       setActiveTab('users');
+    } else if (userRole === 'supplier') {
+      setActiveTab('supplier');
     } else if (userRole === 'office' || userRole === 'backoffice') {
       setActiveTab('summary');
     } else if (userRole === 'driver') {
@@ -128,9 +132,13 @@ function AuthenticatedApp() {
       </header>
 
       <div className="tabs">
-        {/* Operational Tabs - Hidden for Super Admin */}
-        {!isSuperAdmin && (
+        {userRole === 'supplier' ? (
+          <button className="tab-button active">Supplier Portal</button>
+        ) : (
           <>
+            {/* Operational Tabs - Hidden for Super Admin */}
+            {!isSuperAdmin && (
+              <>
             <button
               className={`tab-button ${activeTab === 'loading' ? 'active' : ''}`}
               onClick={() => setActiveTab('loading')}
@@ -168,6 +176,13 @@ function AuthenticatedApp() {
         {(userRole === 'office' || userRole === 'backoffice') && !isSuperAdmin && (
           <>
             <button
+              className={`tab-button ${activeTab === 'inbound' ? 'active' : ''}`}
+              onClick={() => setActiveTab('inbound')}
+              style={{ borderBottom: activeTab === 'inbound' ? '2px solid #8b5cf6' : 'none', color: activeTab === 'inbound' ? '#8b5cf6' : 'inherit' }}
+            >
+              Inbound (Warehouse)
+            </button>
+            <button
               className={`tab-button ${activeTab === 'debts' ? 'active' : ''}`}
               onClick={() => setActiveTab('debts')}
               style={{ borderBottom: activeTab === 'debts' ? '2px solid #ef4444' : 'none' }}
@@ -196,9 +211,12 @@ function AuthenticatedApp() {
             Audit Logs
           </button>
         )}
+        </>
+        )}
       </div>
 
       <main>
+        {activeTab === 'supplier' && <SupplierDashboard />}
         {activeTab === 'loading' && <LoadingTab onCompleteLoad={() => setActiveTab('delivery')} />}
         {activeTab === 'delivery' && <DeliveryForm />}
         {activeTab === 'pickup' && <PickupTab />}
@@ -206,6 +224,7 @@ function AuthenticatedApp() {
         {activeTab === 'debts' && <DebtsTab />}
         {activeTab === 'users' && <UserManagement />}
         {activeTab === 'audit' && <AuditTab />}
+        {activeTab === 'inbound' && <InboundTab />}
       </main>
     </>
   );

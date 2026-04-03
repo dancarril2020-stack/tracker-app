@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
+import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
-import { logAction, ACTIONS } from '../utils/audit'; // Added audit logging
+import { logAction, ACTIONS } from '../utils/audit';
+import ScannerModal from './ScannerModal';
 
 export default function PickupTab() {
     const { currentUser, userRole, tenantId } = useAuth();
     const [loading, setLoading] = useState(false);
     const [activeSession, setActiveSession] = useState(getCurrentSession());
+    const [isScanning, setIsScanning] = useState(false);
 
     // --- STATE FOR OFFICE (ASSIGNMENT) ---
     const [drivers, setDrivers] = useState([]);
@@ -109,7 +111,6 @@ export default function PickupTab() {
     };
 
     // --- DRIVER: HANDLE PROCESS ASSIGNMENT ---
-    // --- DRIVER: HANDLE PROCESS ASSIGNMENT ---
     const handleProcessPickup = async (pickup) => {
         // Validation / Prompt for Reembolso
         let collectedValue = '';
@@ -185,6 +186,60 @@ export default function PickupTab() {
             alert("Error processing pickup: " + err.message);
         }
         setLoading(false);
+    };
+
+    const handleScanPickup = async (payload) => {
+        if (!payload || !payload.id) {
+            alert("Unrecognized QR Code.");
+            return;
+        }
+
+        try {
+            const recordRef = doc(db, 'records', payload.id);
+            const recordSnap = await getDoc(recordRef);
+            if (!recordSnap.exists()) {
+                alert("Package record not found.");
+                return;
+            }
+
+            const record = recordSnap.data();
+            
+            if (record.status !== 'supplier_submitted' && record.status !== 'assigned') {
+                alert(`Cannot scan for pickup. Status is already: ${record.status}`);
+                return;
+            }
+
+            let scannedArr = record.scannedAtPickup || [];
+            if (!scannedArr.includes(payload.pkg)) {
+                scannedArr.push(payload.pkg);
+            }
+
+            let updates = {
+                scannedAtPickup: scannedArr,
+                driverId: currentUser.uid,
+                driverName: currentUser.name || currentUser.email
+            };
+
+            const total = Number(record.quantity) || 1;
+            if (scannedArr.length >= total) {
+                // All parts scanned, or it's just 1 part
+                updates.status = 'picked_up_supplier';
+            }
+
+            await updateDoc(recordRef, updates);
+
+            if (scannedArr.length >= total) {
+                await logAction(currentUser, ACTIONS.PICKUP_ITEM, `QR Scanned: Full pickup from ${record.recipient}`, payload.id);
+                alert(`Recogida Competa! All ${total} packages scanned.`);
+                fetchAssignedPickups(); 
+            } else {
+                 alert(`Paquete ${payload.pkg}/${total} escaneado correctamente.`);
+            }
+
+        } catch (err) {
+            console.error(err);
+            alert("Error updating scanned package: " + err.message);
+        }
     };
 
     // --- DRIVER: HANDLE MANUAL PICKUP ---
@@ -301,6 +356,40 @@ export default function PickupTab() {
     if (viewMode === 'list') {
         return (
             <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
+                {isScanning && (
+                    <ScannerModal 
+                        onClose={() => setIsScanning(false)}
+                        onScan={handleScanPickup}
+                    />
+                )}
+                
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <button
+                        onClick={() => setViewMode('list')}
+                        className={`secondary-button ${viewMode === 'list' ? 'active-filter' : ''}`}
+                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: viewMode === 'list' ? 'var(--primary)' : 'var(--surface)' }}
+                    >
+                        Assigned
+                    </button>
+                    <button
+                        onClick={() => setViewMode('manual')}
+                        className={`secondary-button ${viewMode === 'manual' ? 'active-filter' : ''}`}
+                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: viewMode === 'manual' ? 'var(--primary)' : 'var(--surface)' }}
+                    >
+                        Manual
+                    </button>
+                </div>
+
+                {/* Quick Scan Button Global for Driver */}
+                 <div style={{ marginBottom: '1rem' }}>
+                    <button 
+                        onClick={() => setIsScanning(true)}
+                        className="primary-button" 
+                        style={{ width: '100%', padding: '1rem', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                        📸 Escanear Etiquetas (QR)
+                    </button>
+                </div>
 
                 {/* Session Toggle Dropdown */}
                 <div style={{ marginBottom: '1.5rem' }}>
@@ -317,13 +406,6 @@ export default function PickupTab() {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h2>Assigned Pickups ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h2>
-                    <button
-                        onClick={() => setViewMode('manual')}
-                        className="secondary-button"
-                        style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                    >
-                        + Manual Pickup
-                    </button>
                 </div>
 
                 {assignedPickups.filter(p => p.session === activeSession).length === 0 ? (
@@ -338,7 +420,12 @@ export default function PickupTab() {
                                     <div>
                                         <h3 style={{ margin: '0 0 0.25rem 0' }}>{pickup.recipient}</h3>
                                         {pickup.address && <div style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.25rem' }}>📍 {pickup.address}</div>}
-                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Ref: {pickup.remittance}</div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Remittance: {pickup.supplierName || pickup.remittance}</div>
+                                        {pickup.supplierReference && (
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                Factura/Ref.: <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>{pickup.supplierReference}</span>
+                                            </div>
+                                        )}
                                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Notes: {pickup.volumen}</div>
                                         {pickup.assignedByName && (
                                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.1rem', fontStyle: 'italic' }}>

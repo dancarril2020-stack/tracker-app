@@ -69,7 +69,10 @@ export default function DeliverySummary() {
             }
 
             const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Remove inbound supplier requests - these belong in the Inbound tab
+            data = data.filter(r => r.status !== 'supplier_submitted' && r.status !== 'picked_up_supplier');
 
             // Sort in memory
             data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -635,7 +638,17 @@ export default function DeliverySummary() {
                                             - ASSIGNED {record.status === 'assignment_complete' ? '(Processed)' : ''}
                                         </span>
                                     )}
-                                    {record.type === 'pickup' && record.status !== 'assigned' && (
+                                    {record.type === 'pickup' && record.status === 'supplier_submitted' && (
+                                        <span style={{ color: '#3b82f6', marginLeft: '0.5rem' }}>
+                                            - WAITING PICKUP
+                                        </span>
+                                    )}
+                                    {record.type === 'pickup' && record.status === 'picked_up_supplier' && (
+                                        <span style={{ color: '#8b5cf6', marginLeft: '0.5rem' }}>
+                                            - IN WAREHOUSE
+                                        </span>
+                                    )}
+                                    {record.type === 'pickup' && record.status !== 'assigned' && record.status !== 'assignment_complete' && record.status !== 'supplier_submitted' && record.status !== 'picked_up_supplier' && (
                                         <span style={{ color: '#22c55e', marginLeft: '0.5rem' }}>
                                             - PICK-UP DONE
                                         </span>
@@ -667,8 +680,13 @@ export default function DeliverySummary() {
                                 </span>
                                 <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                    Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
+                                    Remittance: <span style={{ color: 'var(--text-main)' }}>{record.supplierName || record.remittance}</span>
                                 </div>
+                                {record.supplierReference && (
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                                        Factura/Ref.: <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>{record.supplierReference}</span>
+                                    </div>
+                                )}
                                 {record.address && (
                                     <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
                                         📍 {record.address}

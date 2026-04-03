@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant, onSnapshot } from '../firebase';
+import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant, onSnapshot } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
 import { logAction, ACTIONS } from '../utils/audit';
+import ScannerModal from './ScannerModal';
 import EditModal from './EditModal';
 
 export default function LoadingTab({ onCompleteLoad }) {
@@ -11,6 +12,7 @@ export default function LoadingTab({ onCompleteLoad }) {
     // UI State
     const [viewMode, setViewMode] = useState('assigned'); // 'assigned' | 'loaded'
     const [activeSession, setActiveSession] = useState(getCurrentSession());
+    const [isScanning, setIsScanning] = useState(false);
     const [loading, setLoading] = useState(false);
     const [editingRecord, setEditingRecord] = useState(null);
 
@@ -30,21 +32,6 @@ export default function LoadingTab({ onCompleteLoad }) {
         reembolso: '',
         address: ''
     });
-
-    // --- 1. FETCH DRIVERS ---
-    useEffect(() => {
-        // ... (lines 31-41 remain same - skipped in replacement if context allows, but replace block needs contiguous)
-        // I will replace the state def first.
-    }, []); // Wait, replace_file_content needs contigous block.
-
-    // I will replace just the state definition part.
-    // And then the handleSubmit part in a separate chunk or same tool call with multiple replacements if supported (yes).
-
-    // Let's do it in chunks.
-
-    // Chunk 1: State
-    // Chunk 2: HandleSubmit Update Logic
-    // Chunk 3: HandleSubmit Add Logic
 
     // --- 1. FETCH DRIVERS ---
     useEffect(() => {
@@ -198,6 +185,55 @@ export default function LoadingTab({ onCompleteLoad }) {
         setLoading(false);
     };
 
+    const handleScanLoad = async (payload) => {
+        if (!payload || !payload.id) {
+            alert("Unrecognized QR Code.");
+            return;
+        }
+
+        try {
+            const recordRef = doc(db, 'records', payload.id);
+            const recordSnap = await getDoc(recordRef);
+            if (!recordSnap.exists()) {
+                alert("Package record not found.");
+                return;
+            }
+
+            const record = recordSnap.data();
+            
+            // Helpful error if they are trying to load it directly
+            if (record.status === 'supplier_submitted') {
+                alert("Cannot load this yet. This package must be picked up from the supplier first. Use the Pick-ups tab.");
+                return;
+            }
+
+            // Allow scanning if it's assigned_load
+            if (record.status !== 'assigned_load') {
+                alert(`Cannot scan for loading. Status is already: ${record.status}`);
+                return;
+            }
+
+            // Verify driver
+            if (record.driverId !== currentUser.uid) {
+                alert("This package is assigned to another driver.");
+                return;
+            }
+
+            await updateDoc(recordRef, {
+                status: 'pending',
+                loadedAt: new Date().toISOString()
+            });
+
+            await logAction(currentUser, ACTIONS.UPDATE, `QR Scanned: Driver loaded items for ${record.recipient}`, payload.id);
+            alert(`Carga confirmada para ${record.recipient}`);
+            setIsScanning(false);
+
+        } catch (err) {
+            console.error(err);
+            alert("Error updating scanned package: " + err.message);
+        }
+    };
+
     // Stable Metric Calculation (Filtered by Session)
     const sessionRecords = allDailyRecords.filter(r => r.session === activeSession);
     const totalAssignedQty = sessionRecords.filter(l => l.status === 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
@@ -230,8 +266,13 @@ export default function LoadingTab({ onCompleteLoad }) {
                     </span>
                     <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
                     <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                        Albarán: <span style={{ color: 'var(--text-main)' }}>{record.remittance}</span>
+                        Remittance: <span style={{ color: 'var(--text-main)' }}>{record.supplierName || record.remittance}</span>
                     </div>
+                    {record.supplierReference && (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            Factura/Ref.: <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>{record.supplierReference}</span>
+                        </div>
+                    )}
                     {record.address && (
                         <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
                             📍 {record.address}
@@ -280,7 +321,12 @@ export default function LoadingTab({ onCompleteLoad }) {
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
-
+            {isScanning && (
+                <ScannerModal 
+                    onClose={() => setIsScanning(false)}
+                    onScan={handleScanLoad}
+                />
+            )}
 
             {/* Session Toggle Dropdown */}
             <div style={{ marginBottom: '1.5rem' }}>
@@ -294,6 +340,19 @@ export default function LoadingTab({ onCompleteLoad }) {
                     <option value="afternoon">🌇 Afternoon (after 13:30)</option>
                 </select>
             </div>
+
+            {/* Quick Scan Button Global for Driver Loading */}
+            {userRole === 'driver' && (
+                 <div style={{ marginBottom: '1rem' }}>
+                    <button 
+                        onClick={() => setIsScanning(true)}
+                        className="primary-button" 
+                        style={{ width: '100%', padding: '1rem', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                        📸 Escanear Carga (QR)
+                    </button>
+                </div>
+            )}
 
             {/* View Toggle */}
             <div className="glass-panel" style={{ display: 'flex', padding: '0.3rem', gap: '0.5rem', marginBottom: '1.5rem', background: 'rgba(0,0,0,0.2)' }}>
