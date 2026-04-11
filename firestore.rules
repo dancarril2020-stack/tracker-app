@@ -8,18 +8,22 @@ service cloud.firestore {
     }
 
     // --- RECORDS ---
-    // Users can only read/write records in their own tenant
+    // Users can only read/write records in their own tenant, OR records where they are the supplier
     match /records/{recordId} {
       allow read: if request.auth != null && (
-        // Resource exists: check tenantId matches
-        (resource != null && resource.data.tenantId == userTenantId()) ||
-        // Creating new: check incoming data's tenantId matches
-        (resource == null && request.resource.data.tenantId == userTenantId())
+        // Resource exists: check tenantId matches OR they are the supplier
+        (resource != null && (resource.data.tenantId == userTenantId() || resource.data.supplierId == request.auth.uid)) ||
+        // Creating new: check incoming data's tenantId matches OR they are the supplier
+        (resource == null && (request.resource.data.tenantId == userTenantId() || request.resource.data.supplierId == request.auth.uid))
       );
-      allow create: if request.auth != null &&
-        request.resource.data.tenantId == userTenantId();
-      allow update, delete: if request.auth != null &&
-        resource.data.tenantId == userTenantId();
+      allow create: if request.auth != null && (
+        request.resource.data.tenantId == userTenantId() ||
+        request.resource.data.supplierId == request.auth.uid
+      );
+      allow update, delete: if request.auth != null && (
+        resource.data.tenantId == userTenantId() ||
+        resource.data.supplierId == request.auth.uid
+      );
     }
 
     // --- DEBTS ---
