@@ -205,7 +205,10 @@ export default function DeliveryForm() {
                 status: 'delivered',
                 address: load.address || '',
                 observations: cardObservations[load.id] || '',
-                tenantId: load.tenantId || tenantId || 'default'
+                tenantId: load.tenantId || tenantId || 'default',
+                // Preserve supplier info so it shows on delivered card
+                supplierName: load.supplierName || '',
+                supplierReference: load.supplierReference || ''
             });
 
             // 1.5 Check for Debt (Shortfall)
@@ -477,6 +480,24 @@ export default function DeliveryForm() {
                                                     }}
                                                 >
                                                     Fail
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setScanningFor('delivery'); }}
+                                                    style={{
+                                                        padding: '0.3rem 0.6rem',
+                                                        fontSize: '1.2rem',
+                                                        background: 'transparent',
+                                                        border: '1px solid var(--primary)',
+                                                        color: 'var(--primary)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        borderRadius: '4px'
+                                                    }}
+                                                    title="Scan QR"
+                                                >
+                                                    📷
                                                 </button>
                                                 <button
                                                     onClick={(e) => handleDeliverFromList(e, record)}
