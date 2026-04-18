@@ -5,13 +5,13 @@ import { logAction, ACTIONS } from '../utils/audit';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
 
-const ITEMS_PER_PAGE = 30;
+const ITEMS_PER_PAGE = 10;
 
 export default function SupplierDashboard() {
     const { currentUser, tenantId } = useAuth();
     const [loading, setLoading] = useState(false);
     const [requests, setRequests] = useState([]);
-    
+
     const [invoiceNum] = useState(() => 'INV-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'));
 
     const [formData, setFormData] = useState({
@@ -111,10 +111,10 @@ export default function SupplierDashboard() {
         if (filterRecipient && !(req.recipient && req.recipient.toLowerCase().includes(filterRecipient.toLowerCase()))) match = false;
         if (filterTenant && !(req.tenantId && req.tenantId.toLowerCase().includes(filterTenant.toLowerCase()))) match = false;
         if (filterStatus && req.status !== filterStatus) match = false;
-        
+
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
-            const matchesSearch = 
+            const matchesSearch =
                 (req.recipient && req.recipient.toLowerCase().includes(term)) ||
                 (req.address && req.address.toLowerCase().includes(term)) ||
                 (req.supplierReference && req.supplierReference.toLowerCase().includes(term)) ||
@@ -127,9 +127,25 @@ export default function SupplierDashboard() {
     const totalPages = Math.ceil(filteredRequests.length / ITEMS_PER_PAGE);
     const paginatedRequests = filteredRequests.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
+    const uniformActionBtnStyle = {
+        padding: '0.4rem 0.8rem',
+        fontSize: '0.85rem',
+        fontWeight: '500',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.3rem',
+        height: '32px',
+        border: '1px solid transparent',
+        transition: 'all 0.2s',
+    };
+
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gap: '2rem' }}>
-            
+
             <div className="glass-panel">
                 <header style={{ marginBottom: '2rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
                     <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Create Loading Request</h2>
@@ -147,27 +163,27 @@ export default function SupplierDashboard() {
 
                 <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label>Recipient Name</label>
+                        <label>Recipient Name *</label>
                         <input name="recipient" required placeholder="Who is receiving this?" value={formData.recipient} onChange={handleChange} />
                     </div>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label>Delivery Address</label>
+                        <label>Delivery Address *</label>
                         <input name="address" required placeholder="Full address including Zip Code" value={formData.address} onChange={handleChange} />
                     </div>
                     <div className="form-group">
-                        <label>Quantity (Boxes/Pallets)</label>
+                        <label>Quantity *</label>
                         <input name="quantity" type="number" required placeholder="e.g. 3" value={formData.quantity} onChange={handleChange} min={1} />
                     </div>
                     <div className="form-group">
-                        <label>Weight / Dimensions (Obs)</label>
-                        <input name="volumen" placeholder="e.g. 10kg, Fragile" value={formData.volumen} onChange={handleChange} />
+                        <label>Weight / Dimensions (Obs) *</label>
+                        <input name="volumen" required placeholder="e.g. 10kg, Fragile" value={formData.volumen} onChange={handleChange} />
                     </div>
                     <div className="form-group">
                         <label>COD Amount (€) *</label>
                         <input name="reembolso" type="number" step="0.01" min="0" required placeholder="Enter 0 if already paid" value={formData.reembolso} onChange={handleChange} />
                     </div>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label>Transport Client (e.g. TVR or GLS)</label>
+                        <label>Transport Client (e.g. TVR or GLS) *</label>
                         <input name="targetTenant" required placeholder="Name of your logistics provider" value={formData.targetTenant} onChange={handleChange} />
                     </div>
                     <div style={{ gridColumn: '1 / -1', marginTop: '1rem' }}>
@@ -180,49 +196,49 @@ export default function SupplierDashboard() {
 
             <div className="glass-panel">
                 <h3 style={{ marginTop: 0 }}>My Requests</h3>
-                
+
                 {/* Search & Filters */}
                 <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px' }}>
                     <div>
                         <label className="label">Search All</label>
-                        <input 
-                            placeholder="Search requests..." 
-                            value={searchTerm} 
-                            onChange={(e) => setSearchTerm(e.target.value)} 
+                        <input
+                            placeholder="Search requests..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
                             style={{ width: '100%' }}
                         />
                     </div>
                     <div>
                         <label className="label">Filter Date</label>
-                        <input 
-                            type="date" 
-                            value={filterDate} 
-                            onChange={(e) => setFilterDate(e.target.value)} 
+                        <input
+                            type="date"
+                            value={filterDate}
+                            onChange={(e) => setFilterDate(e.target.value)}
                             style={{ width: '100%' }}
                         />
                     </div>
                     <div>
                         <label className="label">Filter Recipient</label>
-                        <input 
-                            placeholder="Recipient..." 
-                            value={filterRecipient} 
-                            onChange={(e) => setFilterRecipient(e.target.value)} 
+                        <input
+                            placeholder="Recipient..."
+                            value={filterRecipient}
+                            onChange={(e) => setFilterRecipient(e.target.value)}
                             style={{ width: '100%' }}
                         />
                     </div>
                     <div>
                         <label className="label">Filter Transport Client</label>
-                        <input 
-                            placeholder="Transport Client..." 
-                            value={filterTenant} 
-                            onChange={(e) => setFilterTenant(e.target.value)} 
+                        <input
+                            placeholder="Transport Client..."
+                            value={filterTenant}
+                            onChange={(e) => setFilterTenant(e.target.value)}
                             style={{ width: '100%' }}
                         />
                     </div>
                     <div>
                         <label className="label">Filter Status</label>
-                        <select 
-                            value={filterStatus} 
+                        <select
+                            value={filterStatus}
                             onChange={(e) => setFilterStatus(e.target.value)}
                             style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)' }}
                         >
@@ -268,14 +284,16 @@ export default function SupplierDashboard() {
                                     <td style={{ padding: '0.5rem', fontWeight: 'bold', color: req.status === 'supplier_submitted' ? '#3b82f6' : req.status === 'supplier_cancelled' ? '#ef4444' : 'var(--primary)' }}>
                                         {req.status === 'supplier_submitted' ? 'Waiting Pickup' : req.status === 'supplier_cancelled' ? 'Cancelled' : req.status}
                                     </td>
-                                    <td style={{ padding: '0.5rem', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                                        <PrintLabelsButton request={req} />
-                                        {req.status === 'supplier_submitted' && (
-                                            <>
-                                                <button onClick={() => setEditingRequest(req)} className="secondary-button" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>Edit</button>
-                                                <button onClick={() => handleCancel(req.id)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                                            </>
-                                        )}
+                                    <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' }}>
+                                            <PrintLabelsButton request={req} btnStyle={uniformActionBtnStyle} />
+                                            {req.status === 'supplier_submitted' && (
+                                                <>
+                                                    <button onClick={() => setEditingRequest(req)} style={{ ...uniformActionBtnStyle, background: 'rgba(255,255,255,0.05)', color: 'var(--text-main)', border: '1px solid var(--border)' }}>✏️ Edit</button>
+                                                    <button onClick={() => handleCancel(req.id)} style={{ ...uniformActionBtnStyle, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid #ef4444' }}>❌ Cancel</button>
+                                                </>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -290,7 +308,7 @@ export default function SupplierDashboard() {
 
                 {totalPages > 1 && (
                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem' }}>
-                        <button 
+                        <button
                             disabled={currentPage === 1}
                             onClick={() => setCurrentPage(prev => prev - 1)}
                             className="secondary-button"
@@ -298,7 +316,7 @@ export default function SupplierDashboard() {
                             Previous
                         </button>
                         <span>Page {currentPage} of {totalPages}</span>
-                        <button 
+                        <button
                             disabled={currentPage === totalPages}
                             onClick={() => setCurrentPage(prev => prev + 1)}
                             className="secondary-button"
@@ -311,7 +329,7 @@ export default function SupplierDashboard() {
 
             {/* Supplier Edit Modal */}
             {editingRequest && (
-                <SupplierEditModal 
+                <SupplierEditModal
                     request={editingRequest}
                     onClose={() => setEditingRequest(null)}
                 />
@@ -347,7 +365,7 @@ const SupplierEditModal = ({ request, onClose }) => {
             await updateDoc(doc(db, "records", request.id), updates);
             await logAction(currentUser, ACTIONS.UPDATE, `Supplier edited request ${request.supplierReference}`, request.id);
             onClose();
-        } catch(err) {
+        } catch (err) {
             console.error(err);
             alert("Error updating: " + err.message);
         }
@@ -402,7 +420,7 @@ const SupplierEditModal = ({ request, onClose }) => {
 };
 
 
-const PrintLabelsButton = ({ request }) => {
+const PrintLabelsButton = ({ request, btnStyle }) => {
     const [generating, setGenerating] = useState(false);
     const quantity = Number(request.quantity) || 1;
     const canvasRefs = useRef([]);
@@ -411,26 +429,27 @@ const PrintLabelsButton = ({ request }) => {
         setGenerating(true);
         setTimeout(() => {
             try {
-                const doc = new jsPDF();
-                
+                const doc = new jsPDF({ format: 'a6' }); // 105 x 148 mm
+
                 for (let i = 0; i < quantity; i++) {
                     if (i > 0) doc.addPage();
-                    
-                    doc.setFontSize(22);
-                    doc.text(`Company: TVR Logistics`, 20, 30);
-                    
+
                     doc.setFontSize(14);
-                    doc.text(`Recipient: ${request.recipient}`, 20, 50);
-                    doc.text(`Address: ${request.address || 'N/A'}`, 20, 60);
-                    doc.text(`Ref/Invoice: ${request.supplierReference || 'N/A'}`, 20, 70);
-                    doc.text(`Remittance: ${request.supplierName || request.remittance || 'N/A'}`, 20, 80);
-                    doc.text(`Package: ${i + 1} of ${quantity}`, 20, 90);
-                    doc.text(`Date: ${new Date(request.createdAt).toLocaleDateString()}`, 20, 100);
+                    doc.text(`Company: TVR Logistics`, 10, 15);
+
+                    doc.setFontSize(10);
+                    const safeAddress = request.address ? request.address.substring(0, 40) : 'N/A'; // Fit A6
+                    doc.text(`Recipient: ${request.recipient}`, 10, 25);
+                    doc.text(`Address: ${safeAddress}`, 10, 32);
+                    doc.text(`Ref/Invoice: ${request.supplierReference || 'N/A'}`, 10, 39);
+                    doc.text(`Remittance: ${request.supplierName || request.remittance || 'N/A'}`, 10, 46);
+                    doc.text(`Package: ${i + 1} of ${quantity}`, 10, 53);
+                    doc.text(`Date: ${new Date(request.createdAt).toLocaleDateString()}`, 10, 60);
 
                     const canvas = canvasRefs.current[i];
                     if (canvas) {
                         const imgData = canvas.toDataURL('image/png');
-                        doc.addImage(imgData, 'PNG', 20, 120, 100, 100);
+                        doc.addImage(imgData, 'PNG', 15, 65, 75, 75); // 75x75 mm QR code scaled
                     }
                 }
                 doc.save(`Labels_${request.supplierReference || request.id}.pdf`);
@@ -444,20 +463,19 @@ const PrintLabelsButton = ({ request }) => {
 
     return (
         <>
-            <button 
-                onClick={handlePrint} 
-                className="secondary-button" 
+            <button
+                onClick={handlePrint}
                 disabled={generating}
-                style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                style={{ ...btnStyle, background: 'rgba(139, 92, 246, 0.1)', color: 'var(--primary)', borderColor: 'var(--primary)' }}
             >
                 {generating ? '...' : '🖨️ Print QRs'}
             </button>
             <div style={{ display: 'none' }}>
                 {Array.from({ length: quantity }).map((_, i) => (
-                    <QRCodeCanvas 
+                    <QRCodeCanvas
                         key={i}
-                        value={`{"id":"${request.id}","pkg":${i+1},"tot":${quantity}}`} 
-                        size={300} 
+                        value={`{"id":"${request.id}","pkg":${i + 1},"tot":${quantity}}`}
+                        size={300}
                         level="H"
                         ref={el => canvasRefs.current[i] = el}
                     />
