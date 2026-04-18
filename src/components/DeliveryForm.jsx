@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit';
 import { getCurrentSession } from '../utils/sessionHelper';
+import ScannerModal from './ScannerModal';
 
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,6 +12,7 @@ export default function DeliveryForm() {
     const [viewMode, setViewMode] = useState('list'); // 'list' (default) or 'manual'
     const [activeSession, setActiveSession] = useState(getCurrentSession());
     const [pendingLoads, setPendingLoads] = useState([]);
+    const [isScanning, setIsScanning] = useState(false);
 
     // Form Data
     const [formData, setFormData] = useState({
@@ -168,7 +170,7 @@ export default function DeliveryForm() {
     };
 
     const handleDeliverFromList = async (e, load) => {
-        e.stopPropagation(); // Prevent bubbling
+        if (e && e.stopPropagation) e.stopPropagation(); // Prevent bubbling
 
         // window.confirm removed as per user preference for smoother workflow
 
@@ -255,6 +257,22 @@ export default function DeliveryForm() {
             alert("Error processing delivery: " + err.message);
         }
         setLoading(false);
+    };
+
+    const handleScan = async (payload) => {
+        if (!payload || !payload.id) {
+            alert("Invalid QR Code Data");
+            setIsScanning(false);
+            return;
+        }
+
+        const matchedLoad = pendingLoads.find(l => l.id === payload.id);
+        if (matchedLoad) {
+            setIsScanning(false);
+            await handleDeliverFromList(null, matchedLoad);
+        } else {
+            alert("Package not found in your pending deliveries!");
+        }
     };
 
     const handleSubmitManual = async (e) => {
@@ -482,7 +500,7 @@ export default function DeliveryForm() {
                                                     Fail
                                                 </button>
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); setScanningFor('delivery'); }}
+                                                    onClick={(e) => { e.stopPropagation(); setIsScanning(true); }}
                                                     style={{
                                                         padding: '0.3rem 0.6rem',
                                                         fontSize: '1.2rem',
@@ -646,6 +664,13 @@ export default function DeliveryForm() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {isScanning && (
+                <ScannerModal 
+                    onScan={handleScan}
+                    onClose={() => setIsScanning(false)}
+                />
             )}
         </>
     );
