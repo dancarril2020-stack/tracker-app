@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo3_tracker.png';
 import ThemeToggle from './ThemeToggle';
 
 export default function LoginScreen() {
@@ -38,9 +38,9 @@ export default function LoginScreen() {
             <ThemeToggle style={{ position: 'absolute', top: '2rem', right: '2rem' }} />
             <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '400px' }}>
                 <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <img src={logo} alt="TVR" style={{ height: '60px', marginBottom: '1rem' }} />
+                    <img src={logo} alt="TVR" style={{ height: '150px', marginBottom: '0rem' }} />
                     <h2 style={{ margin: 0 }}>Log In</h2>
-                    <p style={{ color: 'var(--text-muted)' }}>Welcome to TVR Logistics</p>
+                    <p style={{ color: 'var(--text-muted)' }}>Welcome to Tracker Logistics</p>
                 </div>
 
                 {error && <div style={{
