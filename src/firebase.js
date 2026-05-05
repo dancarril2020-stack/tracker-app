@@ -22,7 +22,8 @@ import {
     limit,
     arrayUnion,
     Timestamp,
-    onSnapshot
+    onSnapshot,
+    runTransaction
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -136,7 +137,8 @@ export {
     limit,
     arrayUnion,
     Timestamp,
-    onSnapshot
+    onSnapshot,
+    runTransaction
 };
 
 export default {};
