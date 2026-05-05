@@ -209,7 +209,7 @@ export default function UserManagement() {
                                     fontSize: '0.75rem',
                                     padding: '0.2rem 0.6rem',
                                     borderRadius: '12px',
-                                    background: user.active === false ? '#64748b' : (user.role === 'office' ? '#3b82f6' : user.role === 'backoffice' ? '#a855f7' : '#22c55e'),
+                                    background: user.active === false ? '#64748b' : (user.role === 'office' ? '#3b82f6' : user.role === 'backoffice' ? '#a855f7' : user.role === 'supplier' ? '#FF6B35' : '#22c55e'),
                                     color: 'white'
                                 }}>
                                     {user.active === false ? 'INACTIVE' : user.role}
