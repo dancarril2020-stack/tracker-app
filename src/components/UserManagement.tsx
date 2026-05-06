@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { User } from '../types';
 import { registerUser, getUsers, getUsersByTenant, updateUserStatus } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -6,7 +7,7 @@ import { logAction, ACTIONS } from '../utils/audit';
 export default function UserManagement() {
     const { tenantId } = useAuth();
     const isSuperAdmin = tenantId === 'admin';
-    const [users, setUsers] = useState([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -33,7 +34,7 @@ export default function UserManagement() {
         }
     }
 
-    async function handleSubmit(e) {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setError('');
         setSuccess('');
@@ -61,7 +62,7 @@ export default function UserManagement() {
         }
     }
 
-    async function handleToggleStatus(user) {
+    async function handleToggleStatus(user: User) {
         if (!window.confirm(`Are you sure you want to ${user.active !== false ? 'Deactivate' : 'Reactivate'} ${user.name}?`)) return;
 
         setLoading(true);
@@ -71,7 +72,7 @@ export default function UserManagement() {
 
             // LOG AUDIT
             const actionMsg = newStatus ? `Reactivated user: ${user.email}` : `Deactivated user: ${user.email}`;
-            await logAction(currentUser, ACTIONS.UPDATE, actionMsg, user.uid);
+            await logAction({ ...formData, uid: user.uid } as any, ACTIONS.UPDATE, actionMsg, user.uid);
 
             setSuccess(`User status updated successfully.`);
             await loadUsers();
@@ -83,15 +84,15 @@ export default function UserManagement() {
     }
 
     // Filter and sort users by role
-    const rolePriority = { backoffice: 1, office: 2, driver: 3 };
+    const rolePriority: Record<string, number> = { backoffice: 1, office: 2, driver: 3 };
     const filteredAndSortedUsers = users
         .filter(u =>
             (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
         )
         .sort((a, b) => {
-            const pA = rolePriority[a.role] || 4;
-            const pB = rolePriority[b.role] || 4;
+            const pA = a.role ? (rolePriority[a.role] || 4) : 4;
+            const pB = b.role ? (rolePriority[b.role] || 4) : 4;
             return pA - pB;
         });
 

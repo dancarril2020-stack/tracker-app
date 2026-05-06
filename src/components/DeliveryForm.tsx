@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { RecordItem, User } from '../types';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit';
 import { getCurrentSession } from '../utils/sessionHelper';
@@ -11,7 +12,7 @@ export default function DeliveryForm() {
     const { currentUser, userRole, tenantId } = useAuth();
     const [viewMode, setViewMode] = useState('list'); // 'list' (default) or 'manual'
     const [activeSession, setActiveSession] = useState(getCurrentSession());
-    const [pendingLoads, setPendingLoads] = useState([]);
+    const [pendingLoads, setPendingLoads] = useState<RecordItem[]>([]);
     const [isScanning, setIsScanning] = useState(false);
 
     // Form Data
@@ -28,7 +29,7 @@ export default function DeliveryForm() {
     const [loading, setLoading] = useState(false);
 
     // Driver Selection State (for Office/Backoffice)
-    const [drivers, setDrivers] = useState([]);
+    const [drivers, setDrivers] = useState<User[]>([]);
     const [selectedDriver, setSelectedDriver] = useState('');
 
     // Search State
@@ -81,21 +82,21 @@ export default function DeliveryForm() {
         setLoading(false);
     };
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleCardObsChange = (loadId, value) => {
+    const handleCardObsChange = (loadId: string, value: string) => {
         setCardObservations(prev => ({ ...prev, [loadId]: value }));
     };
 
     // Fail Modal State
-    const [failingLoad, setFailingLoad] = useState(null);
+    const [failingLoad, setFailingLoad] = useState<RecordItem | null>(null);
     const [failureReason, setFailureReason] = useState('');
 
-    const handleFailClick = (e, load) => {
+    const handleFailClick = (e: React.MouseEvent, load: RecordItem) => {
         e.stopPropagation();
         setFailingLoad(load);
         setFailureReason('');
@@ -169,7 +170,7 @@ export default function DeliveryForm() {
         setLoading(false);
     };
 
-    const handleDeliverFromList = async (e, load) => {
+    const handleDeliverFromList = async (e: React.MouseEvent | null, load: RecordItem) => {
         if (e && e.stopPropagation) e.stopPropagation(); // Prevent bubbling
 
         // window.confirm removed as per user preference for smoother workflow
@@ -259,7 +260,7 @@ export default function DeliveryForm() {
         setLoading(false);
     };
 
-    const handleScan = async (payload) => {
+    const handleScan = async (payload: { id: string }) => {
         if (!payload || !payload.id) {
             alert("Invalid QR Code Data");
             setIsScanning(false);
@@ -275,7 +276,7 @@ export default function DeliveryForm() {
         }
     };
 
-    const handleSubmitManual = async (e) => {
+    const handleSubmitManual = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.recipient || !formData.remittance) {
             alert("Error: Recipient and Remittance are mandatory.");

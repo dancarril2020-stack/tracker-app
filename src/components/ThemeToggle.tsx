@@ -1,7 +1,11 @@
-import React from 'react';
+import { CSSProperties } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 
-export default function ThemeToggle({ style }) {
+interface ThemeToggleProps {
+    style?: CSSProperties;
+}
+
+export default function ThemeToggle({ style }: ThemeToggleProps) {
     const { theme, toggleTheme } = useTheme();
 
     return (

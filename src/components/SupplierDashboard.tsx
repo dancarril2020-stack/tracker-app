@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { RecordItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { db, collection, addDoc, query, where, doc, updateDoc, onSnapshot } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -10,7 +11,7 @@ const ITEMS_PER_PAGE = 10;
 export default function SupplierDashboard() {
     const { currentUser, tenantId } = useAuth();
     const [loading, setLoading] = useState(false);
-    const [requests, setRequests] = useState([]);
+    const [requests, setRequests] = useState<RecordItem[]>([]);
 
     const [invoiceNum] = useState(() => 'INV-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'));
 
@@ -32,7 +33,7 @@ export default function SupplierDashboard() {
     const [currentPage, setCurrentPage] = useState(1);
 
     // Edit Modal State
-    const [editingRequest, setEditingRequest] = useState(null);
+    const [editingRequest, setEditingRequest] = useState<RecordItem | null>(null);
 
     useEffect(() => {
         if (!currentUser) return;
@@ -58,12 +59,12 @@ export default function SupplierDashboard() {
         setCurrentPage(1);
     }, [searchTerm, filterDate, filterRecipient, filterTenant, filterStatus]);
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
@@ -93,7 +94,7 @@ export default function SupplierDashboard() {
         setLoading(false);
     };
 
-    const handleCancel = async (id) => {
+    const handleCancel = async (id: string) => {
         if (!window.confirm("Are you sure you want to cancel this request?")) return;
         try {
             await updateDoc(doc(db, "records", id), { status: 'supplier_cancelled' });
@@ -339,17 +340,17 @@ export default function SupplierDashboard() {
 }
 
 // Supplier Specific Edit Modal
-const SupplierEditModal = ({ request, onClose }) => {
+const SupplierEditModal = ({ request, onClose }: { request: RecordItem, onClose: () => void }) => {
     const { currentUser } = useAuth();
     const [formData, setFormData] = useState({ ...request });
     const [loading, setLoading] = useState(false);
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSave = async (e) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
@@ -420,7 +421,7 @@ const SupplierEditModal = ({ request, onClose }) => {
 };
 
 
-const PrintLabelsButton = ({ request, btnStyle }) => {
+const PrintLabelsButton = ({ request, btnStyle }: { request: RecordItem, btnStyle: React.CSSProperties }) => {
     const [generating, setGenerating] = useState(false);
     const quantity = Number(request.quantity) || 1;
     const canvasRefs = useRef([]);

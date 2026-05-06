@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User, AuthContextType } from '../types';
 import {
     auth,
     db,
@@ -12,16 +13,20 @@ import {
 } from '../firebase';
 
 
-const AuthContext = createContext();
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function useAuth() {
-    return useContext(AuthContext);
+    const context = useContext(AuthContext);
+    if (context === undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 }
 
-export function AuthProvider({ children }) {
-    const [currentUser, setCurrentUser] = useState(null);
-    const [userRole, setUserRole] = useState(null); // 'driver', 'office', 'backoffice'
-    const [tenantId, setTenantId] = useState(null); // Multi-tenant support
+export function AuthProvider({ children }: { children: ReactNode }) {
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [userRole, setUserRole] = useState<string | null>(null); // 'driver', 'office', 'backoffice'
+    const [tenantId, setTenantId] = useState<string | null>(null); // Multi-tenant support
     const [loading, setLoading] = useState(true);
 
     // Time Lock Configuration (Disabled for Testing)
@@ -33,7 +38,7 @@ export function AuthProvider({ children }) {
         return true; // Always allow access for testing
     }
 
-    function login(email, password) {
+    function login(email: string, password: string): Promise<any> {
         return signInWithEmailAndPassword(auth, email, password);
     }
 
@@ -42,7 +47,7 @@ export function AuthProvider({ children }) {
     }
 
     // Admin function to create users (Place in dedicated Admin context later or keep here if simple)
-    async function registerUser(email, password, role, name) {
+    async function registerUser(email: string, password: string, role: string, name: string): Promise<void> {
         // Note: Creating a secondary user while logged in is tricky in Firebase client SDK
         // Usually requires a secondary Admin App or Cloud Function.
         // For this demo, we might simulated it or require re-auth. 
@@ -85,11 +90,11 @@ export function AuthProvider({ children }) {
                         setTenantId(null);
                     }
                     else {
-                        setCurrentUser({ ...user, ...userData });
+                        setCurrentUser({ ...user, ...userData } as User);
                     }
                 } else {
                     // Fallback if user has no doc (shouldn't happen in production)
-                    setCurrentUser(user);
+                    setCurrentUser(user as unknown as User);
                 }
             } else {
                 setCurrentUser(null);

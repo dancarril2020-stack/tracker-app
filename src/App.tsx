@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { db, collection, query, where, onSnapshot } from './firebase'; // Added imports
@@ -88,7 +88,7 @@ function AuthenticatedApp() {
   if (!currentUser) return <LoginScreen />;
 
   // Badge Component
-  const Badge = ({ count }) => {
+  const Badge = ({ count }: { count: number }) => {
     if (count <= 0) return null;
     return (
       <span style={{

@@ -44,7 +44,7 @@ export const db = getFirestore(app);
  * Register a new user without signing out the current one.
  * Uses a secondary Firebase app instance to handle the sign-up.
  */
-export const registerUser = async (email, password, role, name, tenantId = 'default') => {
+export const registerUser = async (email: string, password: string, role: string, name: string, tenantId: string = 'default') => {
     // Create a secondary app instance
     const secondaryApp = initializeApp(firebaseConfig, "Secondary");
     const secondaryAuth = getAuth(secondaryApp);
@@ -94,7 +94,7 @@ export const getUsers = async () => {
 /**
  * Fetch users belonging to a specific tenant
  */
-export const getUsersByTenant = async (tenantId) => {
+export const getUsersByTenant = async (tenantId: string) => {
     try {
         const q = query(collection(db, "users"), where("tenantId", "==", tenantId || 'default'));
         const snapshot = await getDocs(q);
@@ -108,7 +108,7 @@ export const getUsersByTenant = async (tenantId) => {
 /**
  * Toggle user active status (Soft Delete)
  */
-export const updateUserStatus = async (uid, active) => {
+export const updateUserStatus = async (uid: string, active: boolean) => {
     try {
         await updateDoc(doc(db, "users", uid), { active });
         return true;
