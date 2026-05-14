@@ -13,15 +13,17 @@ export const ACTIONS = {
     LOGIN: 'Login' // Optional, but good for tracking
 };
 
+import { User } from './types';
+
 /**
  * Logs a user action to the 'audit_logs' collection.
- * @param {Object} currentUser - The user object from AuthContext
+ * @param {User | null} currentUser - The user object from AuthContext
  * @param {string} action - One of the ACTIONS constants
  * @param {string} details - Human readable details
  * @param {string|null} recordId - ID of the record being acted upon
- * @param {Object|null} metadata - Any extra data (snapshot of previous state etc)
+ * @param {any|null} metadata - Any extra data (snapshot of previous state etc)
  */
-export async function logAction(currentUser, action, details, recordId = null, metadata = null) {
+export async function logAction(currentUser: any, action: string, details: string, recordId: string | null = null, metadata: any = null) {
     try {
         if (!currentUser) return; // Should not happen in auth'd app
 

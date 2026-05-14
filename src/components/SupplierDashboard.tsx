@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RecordItem } from '../types';
+import { RecordItem, Recipient, Product } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { db, collection, addDoc, query, where, doc, updateDoc, onSnapshot } from '../firebase';
+import { db, collection, addDoc, query, where, doc, updateDoc, onSnapshot, getDocs } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
@@ -13,16 +13,30 @@ export default function SupplierDashboard() {
     const [loading, setLoading] = useState(false);
     const [requests, setRequests] = useState<RecordItem[]>([]);
 
-    const [invoiceNum] = useState(() => 'INV-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'));
+    const [invoiceNum, setInvoiceNum] = useState<string>(() => `INV-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`);
+
+    // Dynamic Data States
+    const [recipientsList, setRecipientsList] = useState<Recipient[]>([]);
+    const [productsList, setProductsList] = useState<Product[]>([]);
+    const [zipPortesMap, setZipPortesMap] = useState<Record<string, number>>({});
 
     const [formData, setFormData] = useState({
         recipient: '',
         address: '',
+        zipCode: '',
+        phone: '',
         quantity: '',
         volumen: '',
         reembolso: '',
-        targetTenant: ''
+        observations: '',
+        portes: 0,
+        hasBankAccount: false
     });
+
+    const [recipientSearch, setRecipientSearch] = useState('');
+    const [productSearch, setProductSearch] = useState('');
+    const [showRecipientDropdown, setShowRecipientDropdown] = useState(false);
+    const [showProductDropdown, setShowProductDropdown] = useState(false);
 
     // Filtering & Pagination State
     const [searchTerm, setSearchTerm] = useState('');
@@ -44,12 +58,40 @@ export default function SupplierDashboard() {
         );
 
         const unsub = onSnapshot(q, (snap) => {
-            let data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            let data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as RecordItem));
+            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setRequests(data);
         }, (error) => {
             console.error("Error fetching supplier requests:", error);
         });
+
+        // Fetch dynamic data
+        const fetchDynamicData = async () => {
+            try {
+                const recSnapshot = await getDocs(collection(db, "recipients"));
+                const recList: Recipient[] = [];
+                recSnapshot.forEach(doc => recList.push({ id: doc.id, ...doc.data() } as Recipient));
+                setRecipientsList(recList);
+
+                const prodSnapshot = await getDocs(collection(db, "products"));
+                const prodList: Product[] = [];
+                prodSnapshot.forEach(doc => prodList.push({ id: doc.id, ...doc.data() } as Product));
+                setProductsList(prodList);
+
+                const zipSnapshot = await getDocs(collection(db, "zip_portes"));
+                const zipMap: Record<string, number> = {};
+                zipSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.zipCode && data.price !== undefined) {
+                        zipMap[data.zipCode] = Number(data.price);
+                    }
+                });
+                setZipPortesMap(zipMap);
+            } catch (err) {
+                console.error("Error fetching dynamic data:", err);
+            }
+        };
+        fetchDynamicData();
 
         return () => unsub();
     }, [currentUser, tenantId]);
@@ -66,9 +108,11 @@ export default function SupplierDashboard() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
         setLoading(true);
         try {
             const supplierName = currentUser.tenantId ? currentUser.tenantId.toUpperCase() : currentUser.name || currentUser.email;
+            const targetTenant = tenantId || 'default';
 
             const newDoc = await addDoc(collection(db, "records"), {
                 type: 'pickup',
@@ -76,20 +120,24 @@ export default function SupplierDashboard() {
                 supplierId: currentUser.uid,
                 supplierName: supplierName,
                 ...formData,
+                targetTenant: targetTenant.toUpperCase(),
+                tenantId: targetTenant.toLowerCase(),
                 supplierReference: invoiceNum,
                 remittance: supplierName,
                 scannedAtPickup: [],
                 scannedAtLoad: [],
-                tenantId: formData.targetTenant.toLowerCase().replace(/\s+/g, '-'),
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
             });
-            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Supplier created request for ${formData.recipient} to ${formData.targetTenant} (Invoice: ${invoiceNum})`, newDoc.id);
-            setFormData({ recipient: '', address: '', quantity: '', volumen: '', reembolso: '', targetTenant: '' });
+            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Supplier created request for ${formData.recipient} (Invoice: ${invoiceNum})`, newDoc.id);
+            setFormData({ recipient: '', address: '', zipCode: '', phone: '', quantity: '', volumen: '', reembolso: '', observations: '', portes: 0, hasBankAccount: false });
+            setRecipientSearch('');
+            setProductSearch('');
+            setInvoiceNum(`INV-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`);
             alert("Request submitted successfully!");
         } catch (err) {
             console.error(err);
-            alert("Error submitting request: " + err.message);
+            alert("Error submitting request: " + (err as Error).message);
         }
         setLoading(false);
     };
@@ -98,10 +146,10 @@ export default function SupplierDashboard() {
         if (!window.confirm("Are you sure you want to cancel this request?")) return;
         try {
             await updateDoc(doc(db, "records", id), { status: 'supplier_cancelled' });
-            await logAction(currentUser, ACTIONS.UPDATE, `Supplier cancelled request`, id);
+            await logAction(currentUser, ACTIONS.EDIT_LOAD, `Supplier cancelled request`, id);
         } catch (err) {
             console.error("Failed to cancel", err);
-            alert("Failed to cancel: " + err.message);
+            alert("Failed to cancel: " + (err as Error).message);
         }
     };
 
@@ -153,7 +201,7 @@ export default function SupplierDashboard() {
                     <div style={{ padding: '0.8rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Provider/Company:</span>
-                            <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{currentUser.tenantId || currentUser.name || currentUser.email}</div>
+                            <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{currentUser?.tenantId || currentUser?.name || currentUser?.email}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Invoice Number:</span>
@@ -163,30 +211,181 @@ export default function SupplierDashboard() {
                 </header>
 
                 <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label>Recipient Name *</label>
-                        <input name="recipient" required placeholder="Who is receiving this?" value={formData.recipient} onChange={handleChange} />
+                    {/* Recipient Search & Selection */}
+                    <div className="form-group" style={{ gridColumn: '1 / -1', position: 'relative' }}>
+                        <label>Search Recipient (Database) 🔍</label>
+                        <div style={{ display: 'flex', position: 'relative' }}>
+                            <input 
+                                placeholder="Type to search clients..." 
+                                value={recipientSearch} 
+                                onChange={(e) => {
+                                    setRecipientSearch(e.target.value);
+                                    setShowRecipientDropdown(true);
+                                }}
+                                onFocus={() => setShowRecipientDropdown(true)}
+                                style={{ flex: 1, paddingRight: '30px' }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowRecipientDropdown(!showRecipientDropdown)}
+                                style={{
+                                    position: 'absolute', right: 0, top: 0, bottom: 0,
+                                    background: 'transparent', border: 'none', cursor: 'pointer',
+                                    padding: '0 10px', color: 'var(--text-muted)'
+                                }}
+                            >
+                                ▼
+                            </button>
+                        </div>
+                        {showRecipientDropdown && (
+                            <div className="glass-panel" style={{ position: 'absolute', width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto', top: '100%', marginTop: '5px', padding: '0.5rem' }}>
+                                {recipientsList.filter(r => !recipientSearch || r.name.toLowerCase().includes(recipientSearch.toLowerCase())).map(r => (
+                                    <div 
+                                        key={r.id} 
+                                        className="dropdown-item" 
+                                        style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                                        onClick={() => {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                recipient: r.name,
+                                                address: r.address,
+                                                zipCode: r.zipCode,
+                                                phone: r.phone,
+                                                hasBankAccount: r.hasBankAccount,
+                                                portes: zipPortesMap[r.zipCode] || 0
+                                            }));
+                                            setRecipientSearch(r.name);
+                                            setShowRecipientDropdown(false);
+                                        }}
+                                    >
+                                        <strong>{r.name}</strong> - {r.zipCode}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+
+                    <div className="form-group">
+                        <label>Recipient Name *</label>
+                        <input name="recipient" required placeholder="Name" value={formData.recipient} onChange={handleChange} />
+                    </div>
+                    <div className="form-group">
+                        <label>Recipient Phone</label>
+                        <input name="phone" placeholder="Phone" value={formData.phone} onChange={handleChange} />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: '1 / span 2' }}>
                         <label>Delivery Address *</label>
-                        <input name="address" required placeholder="Full address including Zip Code" value={formData.address} onChange={handleChange} />
+                        <input name="address" required placeholder="Full address" value={formData.address} onChange={handleChange} />
+                    </div>
+                    <div className="form-group">
+                        <label>Zip Code</label>
+                        <input 
+                            name="zipCode" 
+                            placeholder="Zip" 
+                            value={formData.zipCode} 
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                setFormData(prev => ({ ...prev, zipCode: val, portes: zipPortesMap[val] || 0 }));
+                            }} 
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Portes (€) [Auto]</label>
+                        <input name="portes" value={formData.portes ? formData.portes.toFixed(2) : '0.00'} readOnly style={{ background: 'rgba(255,255,255,0.05)', cursor: 'not-allowed' }} />
+                    </div>
+
+                    <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input 
+                            type="checkbox" 
+                            checked={formData.hasBankAccount} 
+                            readOnly 
+                            style={{ width: '20px', height: '20px' }}
+                        />
+                        <label style={{ margin: 0 }}>Has Bank Account with Transport Client</label>
+                    </div>
+
+                    <hr style={{ gridColumn: '1 / -1', border: 'none', borderTop: '1px solid var(--border)', margin: '1rem 0' }} />
+
+                    {/* Product Search & Selection */}
+                    <div className="form-group" style={{ gridColumn: '1 / span 2', position: 'relative' }}>
+                        <label>Search Product / Service 📦</label>
+                        <div style={{ display: 'flex', position: 'relative' }}>
+                            <input 
+                                placeholder="Type to search products..." 
+                                value={productSearch} 
+                                onChange={(e) => {
+                                    setProductSearch(e.target.value);
+                                    setShowProductDropdown(true);
+                                }}
+                                onFocus={() => setShowProductDropdown(true)}
+                                style={{ flex: 1, paddingRight: '30px' }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowProductDropdown(!showProductDropdown)}
+                                style={{
+                                    position: 'absolute', right: 0, top: 0, bottom: 0,
+                                    background: 'transparent', border: 'none', cursor: 'pointer',
+                                    padding: '0 10px', color: 'var(--text-muted)'
+                                }}
+                            >
+                                ▼
+                            </button>
+                        </div>
+                        {showProductDropdown && (
+                            <div className="glass-panel" style={{ position: 'absolute', width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto', top: '100%', marginTop: '5px', padding: '0.5rem' }}>
+                                {productsList.filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())).map(p => (
+                                    <div 
+                                        key={p.id} 
+                                        className="dropdown-item" 
+                                        style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                                        onClick={() => {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                volumen: p.weightObs
+                                            }));
+                                            setProductSearch(p.name);
+                                            setShowProductDropdown(false);
+                                        }}
+                                    >
+                                        <strong>{p.name}</strong> ({p.weightObs})
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="form-group">
+                        <label>Weight / Dimensions *</label>
+                        <input name="volumen" required placeholder="e.g. 10kg" value={formData.volumen} onChange={handleChange} />
                     </div>
                     <div className="form-group">
                         <label>Quantity *</label>
-                        <input name="quantity" type="number" required placeholder="e.g. 3" value={formData.quantity} onChange={handleChange} min={1} />
-                    </div>
-                    <div className="form-group">
-                        <label>Weight / Dimensions (Obs) *</label>
-                        <input name="volumen" required placeholder="e.g. 10kg, Fragile" value={formData.volumen} onChange={handleChange} />
+                        <input name="quantity" type="number" required placeholder="Qty" value={formData.quantity} onChange={handleChange} min={1} />
                     </div>
                     <div className="form-group">
                         <label>COD Amount (€) *</label>
-                        <input name="reembolso" type="number" step="0.01" min="0" required placeholder="Enter 0 if already paid" value={formData.reembolso} onChange={handleChange} />
+                        <input name="reembolso" type="number" step="0.01" min="0" required placeholder="0 if paid" value={formData.reembolso} onChange={handleChange} />
                     </div>
+
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label>Transport Client (e.g. TVR or GLS) *</label>
-                        <input name="targetTenant" required placeholder="Name of your logistics provider" value={formData.targetTenant} onChange={handleChange} />
+                        <label>Observations / Manual Notes</label>
+                        <textarea 
+                            name="observations" 
+                            placeholder="Special instructions, fragile, etc." 
+                            value={formData.observations} 
+                            onChange={(e) => setFormData(prev => ({ ...prev, observations: e.target.value }))}
+                            style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)', minHeight: '80px' }}
+                        />
                     </div>
+
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label>Transport Client (Automated)</label>
+                        <div style={{ padding: '0.8rem', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontWeight: 'bold', color: 'var(--primary)', border: '1px dashed var(--primary)' }}>
+                            {tenantId?.toUpperCase() || 'DEFAULT'}
+                        </div>
+                    </div>
+
                     <div style={{ gridColumn: '1 / -1', marginTop: '1rem' }}>
                         <button type="submit" disabled={loading} className="primary-button" style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}>
                             {loading ? 'Submitting...' : 'Submit Request & Prepare Labels'}
@@ -278,7 +477,7 @@ export default function SupplierDashboard() {
                                     <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{req.supplierReference}</td>
                                     <td style={{ padding: '0.5rem' }}>{req.recipient}</td>
                                     <td style={{ padding: '0.5rem', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={req.address}>{req.address}</td>
-                                    <td style={{ padding: '0.5rem', textTransform: 'uppercase' }}>{req.targetTenant || req.tenantId}</td>
+                                    <td style={{ padding: '0.5rem', textTransform: 'uppercase' }}>{req.tenantId}</td>
                                     <td style={{ padding: '0.5rem' }}>{req.quantity}</td>
                                     <td style={{ padding: '0.5rem' }}>{req.volumen || '-'}</td>
                                     <td style={{ padding: '0.5rem' }}>{req.reembolso || '0'}</td>
@@ -300,7 +499,7 @@ export default function SupplierDashboard() {
                             ))}
                             {paginatedRequests.length === 0 && (
                                 <tr>
-                                    <td colSpan="10" style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No requests found for the given filters.</td>
+                                    <td colSpan={10} style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No requests found for the given filters.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -333,6 +532,7 @@ export default function SupplierDashboard() {
                 <SupplierEditModal
                     request={editingRequest}
                     onClose={() => setEditingRequest(null)}
+                    zipPortesMap={zipPortesMap}
                 />
             )}
         </div>
@@ -340,12 +540,12 @@ export default function SupplierDashboard() {
 }
 
 // Supplier Specific Edit Modal
-const SupplierEditModal = ({ request, onClose }: { request: RecordItem, onClose: () => void }) => {
+const SupplierEditModal = ({ request, onClose, zipPortesMap }: { request: RecordItem, onClose: () => void, zipPortesMap: Record<string, number> }) => {
     const { currentUser } = useAuth();
     const [formData, setFormData] = useState({ ...request });
     const [loading, setLoading] = useState(false);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
@@ -357,18 +557,21 @@ const SupplierEditModal = ({ request, onClose }: { request: RecordItem, onClose:
             const updates = {
                 recipient: formData.recipient,
                 address: formData.address,
+                zipCode: formData.zipCode,
+                phone: formData.phone,
                 quantity: formData.quantity,
                 volumen: formData.volumen,
                 reembolso: formData.reembolso,
-                targetTenant: formData.targetTenant,
-                tenantId: formData.targetTenant.toLowerCase().replace(/\s+/g, '-')
+                observations: formData.observations,
+                portes: formData.portes,
+                hasBankAccount: formData.hasBankAccount
             };
             await updateDoc(doc(db, "records", request.id), updates);
-            await logAction(currentUser, ACTIONS.UPDATE, `Supplier edited request ${request.supplierReference}`, request.id);
+            await logAction(currentUser, ACTIONS.EDIT_LOAD, `Supplier edited request ${request.supplierReference}`, request.id);
             onClose();
         } catch (err) {
             console.error(err);
-            alert("Error updating: " + err.message);
+            alert("Error updating: " + (err as Error).message);
         }
         setLoading(false);
     };
@@ -387,8 +590,25 @@ const SupplierEditModal = ({ request, onClose }: { request: RecordItem, onClose:
                         <input name="recipient" required value={formData.recipient} onChange={handleChange} />
                     </div>
                     <div className="form-group">
+                        <label>Recipient Phone</label>
+                        <input name="phone" value={formData.phone} onChange={handleChange} />
+                    </div>
+                    <div className="form-group">
                         <label>Delivery Address</label>
                         <input name="address" required value={formData.address} onChange={handleChange} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div className="form-group">
+                            <label>Zip Code</label>
+                            <input name="zipCode" value={formData.zipCode} onChange={(e) => {
+                                const val = e.target.value;
+                                setFormData(prev => ({ ...prev, zipCode: val, portes: zipPortesMap[val] || prev.portes }));
+                            }} />
+                        </div>
+                        <div className="form-group">
+                            <label>Portes (€)</label>
+                            <input name="portes" type="number" step="0.01" value={formData.portes} onChange={handleChange} />
+                        </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         <div className="form-group">
@@ -400,15 +620,13 @@ const SupplierEditModal = ({ request, onClose }: { request: RecordItem, onClose:
                             <input name="volumen" value={formData.volumen} onChange={handleChange} />
                         </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div className="form-group">
-                            <label>COD Amount (€)</label>
-                            <input name="reembolso" type="number" step="0.01" min="0" required value={formData.reembolso} onChange={handleChange} />
-                        </div>
-                        <div className="form-group">
-                            <label>Transport Client</label>
-                            <input name="targetTenant" required value={formData.targetTenant} onChange={handleChange} />
-                        </div>
+                    <div className="form-group">
+                        <label>COD Amount (€)</label>
+                        <input name="reembolso" type="number" step="0.01" min="0" required value={formData.reembolso} onChange={handleChange} />
+                    </div>
+                    <div className="form-group">
+                        <label>Observations</label>
+                        <textarea name="observations" value={formData.observations} onChange={handleChange} style={{ width: '100%', minHeight: '60px' }} />
                     </div>
                     <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                         <button type="button" onClick={onClose} className="secondary-button" style={{ flex: 1 }}>Cancel</button>
@@ -424,7 +642,7 @@ const SupplierEditModal = ({ request, onClose }: { request: RecordItem, onClose:
 const PrintLabelsButton = ({ request, btnStyle }: { request: RecordItem, btnStyle: React.CSSProperties }) => {
     const [generating, setGenerating] = useState(false);
     const quantity = Number(request.quantity) || 1;
-    const canvasRefs = useRef([]);
+    const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
 
     const handlePrint = async () => {
         setGenerating(true);
@@ -478,7 +696,7 @@ const PrintLabelsButton = ({ request, btnStyle }: { request: RecordItem, btnStyl
                         value={`{"id":"${request.id}","pkg":${i + 1},"tot":${quantity}}`}
                         size={300}
                         level="H"
-                        ref={el => canvasRefs.current[i] = el}
+                        ref={el => { if (el) canvasRefs.current[i] = el; }}
                     />
                 ))}
             </div>

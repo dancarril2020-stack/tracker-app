@@ -7,6 +7,21 @@ export interface User {
   active?: boolean;
 }
 
+export interface Recipient {
+  id: string;
+  name: string;
+  address: string;
+  zipCode: string;
+  phone: string;
+  hasBankAccount: boolean;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  weightObs: string;
+}
+
 export interface AuthContextType {
   currentUser: User | null;
   userRole: string | null;
@@ -24,8 +39,11 @@ export interface RecordItem {
   supplierId?: string;
   supplierName?: string;
   tenantId?: string;
+  targetTenant?: string;
   recipient?: string;
   address?: string;
+  zipCode?: string;
+  phone?: string;
   quantity?: number | string;
   volumen?: string;
   reembolso?: number | string;
@@ -38,4 +56,7 @@ export interface RecordItem {
   scannedAtLoad?: string[];
   comments?: string;
   imageUrl?: string;
+  portes?: number | string;
+  hasBankAccount?: boolean;
+  observations?: string;
 }
