@@ -122,7 +122,7 @@ function AuthenticatedApp() {
         <img src={logo} alt="TVR Logo" style={{ height: '60px', width: 'auto' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: '800px', alignItems: 'center' }}>
           <div style={{ textAlign: 'left' }}>
-            <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-main)' }}>TVR Logistics</h1>
+            <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-main)' }}>TVR Logistics {tenantId}</h1>
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--primary)' }}>{userRole?.toUpperCase()} : {currentUser.email}</p>
           </div>
           <button onClick={logout} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--primary)' }}>
@@ -139,79 +139,79 @@ function AuthenticatedApp() {
             {/* Operational Tabs - Hidden for Super Admin */}
             {!isSuperAdmin && (
               <>
-            <button
-              className={`tab-button ${activeTab === 'loading' ? 'active' : ''}`}
-              onClick={() => setActiveTab('loading')}
-              style={{ position: 'relative', overflow: 'visible' }}
-            >
-              Loads
-              <Badge count={badges.loads} />
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'delivery' ? 'active' : ''}`}
-              onClick={() => setActiveTab('delivery')}
-              style={{ position: 'relative', overflow: 'visible' }} // Allow badge overflow
-            >
-              Deliveries
-              <Badge count={badges.deliveries} />
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'pickup' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pickup')}
-              style={{ position: 'relative', overflow: 'visible' }}
-            >
-              Pick-ups
-              <Badge count={badges.pickups} />
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
-              onClick={() => setActiveTab('summary')}
-            >
-              Summary
-            </button>
+                <button
+                  className={`tab-button ${activeTab === 'loading' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('loading')}
+                  style={{ position: 'relative', overflow: 'visible' }}
+                >
+                  Loads
+                  <Badge count={badges.loads} />
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'delivery' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('delivery')}
+                  style={{ position: 'relative', overflow: 'visible' }} // Allow badge overflow
+                >
+                  Deliveries
+                  <Badge count={badges.deliveries} />
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'pickup' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('pickup')}
+                  style={{ position: 'relative', overflow: 'visible' }}
+                >
+                  Pick-ups
+                  <Badge count={badges.pickups} />
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('summary')}
+                >
+                  Summary
+                </button>
+              </>
+            )}
+
+            {/* Office/Backoffice Specific Tabs */}
+            {(userRole === 'office' || userRole === 'backoffice') && !isSuperAdmin && (
+              <>
+                <button
+                  className={`tab-button ${activeTab === 'inbound' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('inbound')}
+                  style={{ borderBottom: activeTab === 'inbound' ? '2px solid #8b5cf6' : 'none', color: activeTab === 'inbound' ? '#8b5cf6' : 'inherit' }}
+                >
+                  Inbound (Warehouse)
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'debts' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('debts')}
+                  style={{ borderBottom: activeTab === 'debts' ? '2px solid #ef4444' : 'none' }}
+                >
+                  Debts 💸
+                </button>
+              </>
+            )}
+
+            {/* Users Tab - Visible to Office/Backoffice (and Super Admin via separate logic if needed, but here simple role check works as Super Admin is backoffice) */}
+            {(userRole === 'office' || userRole === 'backoffice') && (
+              <button
+                className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
+                onClick={() => setActiveTab('users')}
+              >
+                Users
+              </button>
+            )}
+
+            {/* Audit Tab - Backoffice Only (but NOT Super Admin, unless they want it) */}
+            {userRole === 'backoffice' && !isSuperAdmin && (
+              <button
+                className={`tab-button ${activeTab === 'audit' ? 'active' : ''}`}
+                onClick={() => setActiveTab('audit')}
+              >
+                Audit Logs
+              </button>
+            )}
           </>
-        )}
-
-        {/* Office/Backoffice Specific Tabs */}
-        {(userRole === 'office' || userRole === 'backoffice') && !isSuperAdmin && (
-          <>
-            <button
-              className={`tab-button ${activeTab === 'inbound' ? 'active' : ''}`}
-              onClick={() => setActiveTab('inbound')}
-              style={{ borderBottom: activeTab === 'inbound' ? '2px solid #8b5cf6' : 'none', color: activeTab === 'inbound' ? '#8b5cf6' : 'inherit' }}
-            >
-              Inbound (Warehouse)
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'debts' ? 'active' : ''}`}
-              onClick={() => setActiveTab('debts')}
-              style={{ borderBottom: activeTab === 'debts' ? '2px solid #ef4444' : 'none' }}
-            >
-              Debts 💸
-            </button>
-          </>
-        )}
-
-        {/* Users Tab - Visible to Office/Backoffice (and Super Admin via separate logic if needed, but here simple role check works as Super Admin is backoffice) */}
-        {(userRole === 'office' || userRole === 'backoffice') && (
-          <button
-            className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => setActiveTab('users')}
-          >
-            Users
-          </button>
-        )}
-
-        {/* Audit Tab - Backoffice Only (but NOT Super Admin, unless they want it) */}
-        {userRole === 'backoffice' && !isSuperAdmin && (
-          <button
-            className={`tab-button ${activeTab === 'audit' ? 'active' : ''}`}
-            onClick={() => setActiveTab('audit')}
-          >
-            Audit Logs
-          </button>
-        )}
-        </>
         )}
       </div>
 
