@@ -44,7 +44,7 @@ export const db = getFirestore(app);
  * Register a new user without signing out the current one.
  * Uses a secondary Firebase app instance to handle the sign-up.
  */
-export const registerUser = async (email: string, password: string, role: string, name: string, tenantId: string = 'default') => {
+export const registerUser = async (email: string, password: string, role: string, name: string, tenantId: string = 'default', supplierCompanyName?: string) => {
     // Create a secondary app instance
     const secondaryApp = initializeApp(firebaseConfig, "Secondary");
     const secondaryAuth = getAuth(secondaryApp);
@@ -54,7 +54,7 @@ export const registerUser = async (email: string, password: string, role: string
         const uid = res.user.uid;
 
         // Store role, name and tenantId in Firestore
-        const userData = {
+        const userData: any = {
             email,
             role,
             name,
@@ -62,6 +62,10 @@ export const registerUser = async (email: string, password: string, role: string
             active: true, // Default to active
             createdAt: new Date().toISOString()
         };
+
+        if (role === 'supplier' && supplierCompanyName) {
+            userData.supplierCompanyName = supplierCompanyName;
+        }
 
         await setDoc(doc(db, "users", uid), userData);
 

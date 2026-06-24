@@ -3,6 +3,7 @@ export interface User {
   email: string | null;
   role?: 'superadmin' | 'backoffice' | 'office' | 'driver' | 'supplier' | 'user';
   name?: string;
+  supplierCompanyName?: string;
   tenantId?: string;
   active?: boolean;
 }

@@ -13,7 +13,8 @@ export default function UserManagement() {
         email: '',
         password: '',
         role: 'driver',
-        tenantId: tenantId === 'admin' ? '' : tenantId
+        tenantId: tenantId === 'admin' ? '' : tenantId,
+        supplierCompanyName: ''
     });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -41,7 +42,7 @@ export default function UserManagement() {
         setLoading(true);
 
         try {
-            await registerUser(formData.email, formData.password, formData.role, formData.name, formData.tenantId);
+            await registerUser(formData.email, formData.password, formData.role, formData.name, formData.tenantId, formData.supplierCompanyName);
 
             // LOG AUDIT (Manual creation)
             await logAction({ ...formData, uid: 'new-user' }, ACTIONS.CREATE_ITEM, `Created user: ${formData.email} (${formData.role})`, null, { targetTenant: formData.tenantId });
@@ -52,7 +53,8 @@ export default function UserManagement() {
                 email: '',
                 password: '',
                 role: 'driver',
-                tenantId: isSuperAdmin ? formData.tenantId : tenantId
+                tenantId: isSuperAdmin ? formData.tenantId : tenantId,
+                supplierCompanyName: ''
             });
             await loadUsers(); // Refresh list
         } catch (err) {
@@ -148,9 +150,22 @@ export default function UserManagement() {
                             <option value="driver">Driver</option>
                             <option value="office">Office</option>
                             <option value="backoffice">Backoffice</option>
-                            {isSuperAdmin && <option value="supplier">Supplier</option>}
+                            <option value="supplier">Supplier</option>
                         </select>
                     </div>
+
+                    {formData.role === 'supplier' && (
+                        <div className="form-group">
+                            <label>Supplier Company Name</label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g. TVH"
+                                value={formData.supplierCompanyName}
+                                onChange={e => setFormData({ ...formData, supplierCompanyName: e.target.value })}
+                            />
+                        </div>
+                    )}
 
                     {isSuperAdmin && (
                         <div className="form-group">

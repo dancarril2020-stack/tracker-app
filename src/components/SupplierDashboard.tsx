@@ -111,7 +111,7 @@ export default function SupplierDashboard() {
         if (!currentUser) return;
         setLoading(true);
         try {
-            const supplierName = currentUser.tenantId ? currentUser.tenantId.toUpperCase() : currentUser.name || currentUser.email;
+            const supplierName = (currentUser.supplierCompanyName || currentUser.name || currentUser.email || 'Unknown Supplier').toUpperCase();
             const targetTenant = tenantId || 'default';
 
             const newDoc = await addDoc(collection(db, "records"), {
@@ -201,7 +201,7 @@ export default function SupplierDashboard() {
                     <div style={{ padding: '0.8rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Provider/Company:</span>
-                            <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{currentUser?.tenantId || currentUser?.name || currentUser?.email}</div>
+                            <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{currentUser?.supplierCompanyName || currentUser?.name || currentUser?.email || 'N/A'}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Invoice Number:</span>
@@ -215,9 +215,9 @@ export default function SupplierDashboard() {
                     <div className="form-group" style={{ gridColumn: '1 / -1', position: 'relative' }}>
                         <label>Search Recipient (Database) 🔍</label>
                         <div style={{ display: 'flex', position: 'relative' }}>
-                            <input 
-                                placeholder="Type to search clients..." 
-                                value={recipientSearch} 
+                            <input
+                                placeholder="Type to search clients..."
+                                value={recipientSearch}
                                 onChange={(e) => {
                                     setRecipientSearch(e.target.value);
                                     setShowRecipientDropdown(true);
@@ -240,9 +240,9 @@ export default function SupplierDashboard() {
                         {showRecipientDropdown && (
                             <div className="glass-panel" style={{ position: 'absolute', width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto', top: '100%', marginTop: '5px', padding: '0.5rem' }}>
                                 {recipientsList.filter(r => !recipientSearch || r.name.toLowerCase().includes(recipientSearch.toLowerCase())).map(r => (
-                                    <div 
-                                        key={r.id} 
-                                        className="dropdown-item" 
+                                    <div
+                                        key={r.id}
+                                        className="dropdown-item"
                                         style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
                                         onClick={() => {
                                             setFormData(prev => ({
@@ -279,14 +279,14 @@ export default function SupplierDashboard() {
                     </div>
                     <div className="form-group">
                         <label>Zip Code</label>
-                        <input 
-                            name="zipCode" 
-                            placeholder="Zip" 
-                            value={formData.zipCode} 
+                        <input
+                            name="zipCode"
+                            placeholder="Zip"
+                            value={formData.zipCode}
                             onChange={(e) => {
                                 const val = e.target.value;
                                 setFormData(prev => ({ ...prev, zipCode: val, portes: zipPortesMap[val] || 0 }));
-                            }} 
+                            }}
                         />
                     </div>
                     <div className="form-group">
@@ -295,10 +295,10 @@ export default function SupplierDashboard() {
                     </div>
 
                     <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <input 
-                            type="checkbox" 
-                            checked={formData.hasBankAccount} 
-                            readOnly 
+                        <input
+                            type="checkbox"
+                            checked={formData.hasBankAccount}
+                            readOnly
                             style={{ width: '20px', height: '20px' }}
                         />
                         <label style={{ margin: 0 }}>Has Bank Account with Transport Client</label>
@@ -310,9 +310,9 @@ export default function SupplierDashboard() {
                     <div className="form-group" style={{ gridColumn: '1 / span 2', position: 'relative' }}>
                         <label>Search Product / Service 📦</label>
                         <div style={{ display: 'flex', position: 'relative' }}>
-                            <input 
-                                placeholder="Type to search products..." 
-                                value={productSearch} 
+                            <input
+                                placeholder="Type to search products..."
+                                value={productSearch}
                                 onChange={(e) => {
                                     setProductSearch(e.target.value);
                                     setShowProductDropdown(true);
@@ -335,9 +335,9 @@ export default function SupplierDashboard() {
                         {showProductDropdown && (
                             <div className="glass-panel" style={{ position: 'absolute', width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto', top: '100%', marginTop: '5px', padding: '0.5rem' }}>
                                 {productsList.filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())).map(p => (
-                                    <div 
-                                        key={p.id} 
-                                        className="dropdown-item" 
+                                    <div
+                                        key={p.id}
+                                        className="dropdown-item"
                                         style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
                                         onClick={() => {
                                             setFormData(prev => ({
@@ -370,10 +370,10 @@ export default function SupplierDashboard() {
 
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                         <label>Observations / Manual Notes</label>
-                        <textarea 
-                            name="observations" 
-                            placeholder="Special instructions, fragile, etc." 
-                            value={formData.observations} 
+                        <textarea
+                            name="observations"
+                            placeholder="Special instructions, fragile, etc."
+                            value={formData.observations}
                             onChange={(e) => setFormData(prev => ({ ...prev, observations: e.target.value }))}
                             style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-main)', minHeight: '80px' }}
                         />
