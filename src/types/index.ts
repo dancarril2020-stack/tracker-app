@@ -59,5 +59,6 @@ export interface RecordItem {
   imageUrl?: string;
   portes?: number | string;
   hasBankAccount?: boolean;
+  portesPaymentType?: 'debidos' | 'pagados';
   observations?: string;
 }
