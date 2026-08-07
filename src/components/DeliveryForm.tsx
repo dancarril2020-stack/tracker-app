@@ -57,24 +57,35 @@ export default function DeliveryForm() {
         if (viewMode === 'list') {
             fetchPendingLoads();
         }
-    }, [viewMode]);
+    }, [viewMode, activeSession]);
 
     const fetchPendingLoads = async () => {
         setLoading(true);
         try {
             const today = new Date().toISOString().split('T')[0];
-            const q = query(
-                collection(db, "records"),
-                where("driverId", "==", currentUser.uid),
-                where("date", "==", today),
-                where("type", "==", "load"),
-                where("status", "==", "pending"),
-                where("tenantId", "==", tenantId || 'default')
-            );
+            let q;
+            if (activeSession.startsWith('recogida_')) {
+                q = query(
+                    collection(db, "records"),
+                    where("driverId", "==", currentUser.uid),
+                    where("status", "==", "picked_up_supplier"),
+                    where("tenantId", "==", tenantId || 'default')
+                );
+            } else {
+                q = query(
+                    collection(db, "records"),
+                    where("driverId", "==", currentUser.uid),
+                    where("date", "==", today),
+                    where("type", "==", "load"),
+                    where("status", "==", "pending"),
+                    where("tenantId", "==", tenantId || 'default')
+                );
+            }
             const snapshot = await getDocs(q);
             const data = snapshot.docs ? snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
             // Sort by creation time (newest first)
-            data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            console.log("DEBUG_FETCHED_LOADS", JSON.stringify(data.map(d => ({id: d.id, status: d.status, session: d.session, recipient: d.recipient, type: d.type, driverId: d.driverId}))));
             setPendingLoads(data);
         } catch (err) {
             console.error("Error fetching pending loads:", err);
@@ -173,10 +184,28 @@ export default function DeliveryForm() {
     const handleDeliverFromList = async (e: React.MouseEvent | null, load: RecordItem) => {
         if (e && e.stopPropagation) e.stopPropagation(); // Prevent bubbling
 
-        // window.confirm removed as per user preference for smoother workflow
-
         setLoading(true);
         try {
+            if (load.status === 'picked_up_supplier') {
+                let nextStatus = 'in_warehouse';
+                let updates: any = { status: nextStatus };
+                
+                if (load.lastMileDriverId) {
+                     nextStatus = 'assigned_load';
+                     updates.status = nextStatus;
+                     updates.driverId = load.lastMileDriverId;
+                     updates.driverName = load.lastMileDriverName;
+                     updates.session = load.lastMileSession || 'afternoon';
+                     updates.type = 'load'; 
+                }
+
+                await updateDoc(doc(db, "records", load.id), updates);
+                await logAction(currentUser, ACTIONS.UPDATE, `Unloaded supplier package at warehouse: ${load.recipient}`, load.id);
+                fetchPendingLoads();
+                setLoading(false);
+                return;
+            }
+
             const today = new Date().toISOString().split('T')[0];
 
             let collectedValue = '';
@@ -272,9 +301,12 @@ export default function DeliveryForm() {
             setIsScanning(false);
             await handleDeliverFromList(null, matchedLoad);
         } else {
-            alert("Package not found in your pending deliveries!");
+            alert("Package not found in your pending deliveries for this session!");
+            setIsScanning(false);
         }
     };
+
+
 
     const handleSubmitManual = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -364,17 +396,27 @@ export default function DeliveryForm() {
                         >
                             <option value="morning">🌅 Morning (up to 13:30)</option>
                             <option value="afternoon">🌇 Afternoon (after 13:30)</option>
+                            <option value="recogida_manana">📦 Recogida Mañana</option>
+                            <option value="recogida_tarde">📦 Recogida Tarde</option>
                         </select>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <h2>Pending Deliveries ({activeSession === 'morning' ? 'Morning' : 'Afternoon'})</h2>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
+                        <h2 style={{ flex: 1 }}>Deliveries</h2>
+
+                        <button
+                            onClick={() => setIsScanning(true)}
+                            className="primary-button"
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                        >
+                            📷 Scan
+                        </button>
                         <button
                             onClick={() => setViewMode('manual')}
                             className="secondary-button"
                             style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
                         >
-                            + Manually Register Delivery
+                            + Manual
                         </button>
                     </div>
 
@@ -521,9 +563,9 @@ export default function DeliveryForm() {
                                                 <button
                                                     onClick={(e) => handleDeliverFromList(e, record)}
                                                     className="primary-button"
-                                                    style={{ padding: '0.3rem 1rem', fontSize: '0.9rem' }}
+                                                    style={{ padding: '0.3rem 1rem', fontSize: '0.9rem', background: record.status === 'picked_up_supplier' ? '#8b5cf6' : undefined }}
                                                 >
-                                                    Deliver
+                                                    {record.status === 'picked_up_supplier' ? 'Unload' : 'Deliver'}
                                                 </button>
                                             </div>
                                         </div>
@@ -673,6 +715,7 @@ export default function DeliveryForm() {
                     onClose={() => setIsScanning(false)}
                 />
             )}
+
         </>
     );
 }
