@@ -127,30 +127,19 @@ export default function PickupTab() {
             const today = new Date().toISOString().split('T')[0];
             const recordRef = doc(db, "records", pickup.id);
 
-            // 1. Mark the ASSIGNMENT as 'assignment_complete'
-            await updateDoc(recordRef, {
-                status: 'assignment_complete'
-            });
+            const currentHour = new Date().getHours();
+            const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
 
-            // 2. Create a NEW record for the ACTUAL PICKUP (Result)
-            const pickupResult = await addDoc(collection(db, "records"), {
-                type: 'pickup',
-                status: 'completed_pickup',
-                driverId: pickup.driverId,
-                driverName: pickup.driverName,
-                recipient: pickup.recipient,
-                remittance: pickup.remittance,
-                quantity: pickup.quantity,
-                volumen: pickup.volumen,
-                portes: pickup.portes,
-                address: pickup.address,
-                session: pickup.session,
-                tenantId: pickup.tenantId || tenantId || 'default',
+            // 1. Update the original assignment record to picked up and route to delivery session
+            await updateDoc(recordRef, {
+                status: 'picked_up_supplier',
+                session: sessionToAssign,
+                driverId: currentUser.uid,
+                driverName: currentUser.name || currentUser.email,
                 collectedValue: collectedValue || '0',
                 reembolso: collectedValue || pickup.reembolso || '',
                 expectedReembolso: pickup.reembolso || '',
                 completedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
                 date: today
             });
 
@@ -166,7 +155,7 @@ export default function PickupTab() {
                         remittance: pickup.remittance,
                         amount: shortfall.toFixed(2),
                         originalLoadId: pickup.id,
-                        deliveryId: pickupResult.id, // Linking to the pickup result
+                        deliveryId: pickup.id, // Linking to the original pickup
                         driverId: currentUser.uid,
                         driverName: currentUser.name || currentUser.email,
                         date: today,
@@ -178,7 +167,7 @@ export default function PickupTab() {
                 }
             }
 
-            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Completed pickup from ${pickup.recipient}`, pickupResult.id);
+            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Completed pickup from ${pickup.recipient}`, pickup.id);
 
             fetchAssignedPickups(); // Refresh list
         } catch (err) {
@@ -204,7 +193,7 @@ export default function PickupTab() {
 
             const record = recordSnap.data();
             
-            if (record.status !== 'supplier_submitted' && record.status !== 'assigned') {
+            if (!['supplier_submitted', 'assigned', 'assigned_supplier_pickup'].includes(record.status)) {
                 alert(`Cannot scan for pickup. Status is already: ${record.status}`);
                 return;
             }
@@ -214,16 +203,21 @@ export default function PickupTab() {
                 scannedArr.push(payload.pkg);
             }
 
-            let updates = {
+            let updates: any = {
                 scannedAtPickup: scannedArr,
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email
             };
 
+            const currentHour = new Date().getHours();
+            const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
+
             const total = Number(record.quantity) || 1;
+            console.log("DEBUG_SCAN: pkg=", payload.pkg, "scannedArr=", scannedArr, "total=", total);
             if (scannedArr.length >= total) {
                 // All parts scanned, or it's just 1 part
                 updates.status = 'picked_up_supplier';
+                updates.session = sessionToAssign;
             }
 
             await updateDoc(recordRef, updates);
@@ -249,17 +243,20 @@ export default function PickupTab() {
         setManualData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleManualSubmit = async (e) => {
+    const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
+            const currentHour = new Date().getHours();
+            const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
+
             const pickupRef = await addDoc(collection(db, "records"), {
                 type: 'pickup',
-                status: 'completed_pickup',
+                status: 'picked_up_supplier',
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
-                session: activeSession,
+                session: sessionToAssign,
                 tenantId: tenantId || 'default',
                 collectedValue: manualData.reembolso || '0',
                 expectedReembolso: manualData.reembolso || '',

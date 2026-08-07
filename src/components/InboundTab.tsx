@@ -5,15 +5,14 @@ import { logAction, ACTIONS } from '../utils/audit';
 
 export default function InboundTab() {
     const { tenantId, currentUser } = useAuth();
-    const [records, setRecords] = useState([]);
-    const [drivers, setDrivers] = useState([]);
+    const [records, setRecords] = useState<any[]>([]);
+    const [drivers, setDrivers] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     
     // Assignment State
-    const [selectedRecord, setSelectedRecord] = useState(null);
-    const [actionType, setActionType] = useState(''); // 'pickup' or 'load'
+    const [selectedRecord, setSelectedRecord] = useState<any>(null);
     const [selectedDriver, setSelectedDriver] = useState('');
-    const [selectedSession, setSelectedSession] = useState('morning'); // Default to morning
+    const [selectedSession, setSelectedSession] = useState('morning');
 
     useEffect(() => {
         getUsersByTenant(tenantId).then(users => {
@@ -27,18 +26,17 @@ export default function InboundTab() {
         const unsub = onSnapshot(q, snap => {
             const data = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(d => ['supplier_submitted', 'picked_up_supplier'].includes(d.status));
+                .filter(d => ['supplier_submitted', 'picked_up_supplier', 'in_warehouse'].includes(d.status));
             
-            data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setRecords(data);
         });
 
         return () => unsub();
     }, [tenantId]);
 
-    const handleOpenAssign = (rec, type) => {
+    const handleOpenAssign = (rec: any) => {
         setSelectedRecord(rec);
-        setActionType(type);
         if (drivers.length > 0) setSelectedDriver(drivers[0].uid);
     };
 
@@ -49,106 +47,109 @@ export default function InboundTab() {
 
         try {
             const recordRef = doc(db, 'records', selectedRecord.id);
-            const today = new Date().toISOString().split('T')[0];
             
-            let updates = {};
-            if (actionType === 'pickup') {
-                updates = {
-                    status: 'assigned_load', // Goes to Last Mile Driver Tab (User requested "Load in Warehouse")
+            // The office is assigning the LAST MILE driver.
+            // If the item is already in_warehouse, we can directly assign it as a load.
+            // If it is NOT in_warehouse yet (i.e. picked_up_supplier or supplier_submitted),
+            // we save the lastMileDriverId so the driver can automatically assign it when they unload it.
+            
+            if (selectedRecord.status === 'in_warehouse') {
+                const today = new Date().toISOString().split('T')[0];
+                await updateDoc(recordRef, {
+                    status: 'assigned_load', 
                     type: 'load',
                     driverId: selectedDriver,
                     driverName: driverName,
-                    assignedByName: currentUser.name || currentUser.email,
+                    assignedByName: currentUser?.name || currentUser?.email,
                     date: today,
                     session: selectedSession
-                };
-            } else if (actionType === 'load') {
-                updates = {
-                    status: 'assigned_load', // Goes to Last Mile Driver Tab
-                    type: 'load',
-                    driverId: selectedDriver,
-                    driverName: driverName,
-                    assignedByName: currentUser.name || currentUser.email,
-                    date: today,
-                    session: selectedSession // required for driver tabs
-                };
+                });
+                await logAction(currentUser, ACTIONS.UPDATE, `Assigned Route Delivery for ${selectedRecord.recipient} to ${driverName}`, selectedRecord.id);
+            } else {
+                await updateDoc(recordRef, {
+                    lastMileDriverId: selectedDriver,
+                    lastMileDriverName: driverName,
+                    lastMileSession: selectedSession
+                });
+                await logAction(currentUser, ACTIONS.UPDATE, `Pre-assigned Route Delivery for ${selectedRecord.recipient} to ${driverName}`, selectedRecord.id);
             }
-
-            await updateDoc(recordRef, updates);
-            await logAction(currentUser, ACTIONS.UPDATE, `Assigned ${actionType} for ${selectedRecord.recipient} to ${driverName}`, selectedRecord.id);
             
             setSelectedRecord(null);
         } catch (err) {
             console.error(err);
-            alert("Error assigning: " + err.message);
+            alert("Error assigning: " + (err as Error).message);
         }
         setLoading(false);
     };
 
-    const waitingPickups = records.filter(r => r.status === 'supplier_submitted');
-    const inWarehouse = records.filter(r => r.status === 'picked_up_supplier');
-
-    const renderTable = (list, type) => (
-        <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}>
-                <thead>
-                    <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                        <th style={{ padding: '0.8rem' }}>Supplier</th>
-                        <th style={{ padding: '0.8rem' }}>Recipient</th>
-                        <th style={{ padding: '0.8rem' }}>Location</th>
-                        <th style={{ padding: '0.8rem' }}>Qty</th>
-                        <th style={{ padding: '0.8rem' }}>Date</th>
-                        <th style={{ padding: '0.8rem', textAlign: 'right' }}>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {list.map(r => (
-                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td style={{ padding: '0.8rem' }}>{r.supplierName || 'Unknown'}</td>
-                            <td style={{ padding: '0.8rem' }}>{r.recipient}</td>
-                            <td style={{ padding: '0.8rem' }}>{r.address || 'N/A'}</td>
-                            <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{r.quantity}</td>
-                            <td style={{ padding: '0.8rem' }}>{new Date(r.createdAt).toLocaleDateString()}</td>
-                            <td style={{ padding: '0.8rem', textAlign: 'right' }}>
-                                <button 
-                                    className="primary-button" 
-                                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                                    onClick={() => handleOpenAssign(r, type)}
-                                >
-                                    Assign {type === 'pickup' ? 'First Mile' : 'Last Mile'}
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
-                    {list.length === 0 && (
-                        <tr>
-                            <td colSpan="6" style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No records found.</td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-        </div>
-    );
+    const getStatusDisplay = (status: string) => {
+        switch (status) {
+            case 'supplier_submitted': return <span style={{ color: '#ef4444' }}>Created</span>;
+            case 'picked_up_supplier': return <span style={{ color: '#8b5cf6' }}>Picked Up</span>;
+            case 'in_warehouse': return <span style={{ color: '#22c55e' }}>Delivered</span>;
+            default: return status;
+        }
+    };
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto' }}>
             <h2>Inbound Supplier Requests</h2>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Manage and assign items generated by your suppliers.</p>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Monitor supplier packages and assign the Last Mile delivery driver.</p>
 
             <div className="glass-panel" style={{ marginBottom: '2rem' }}>
-                <h3 style={{ color: '#3b82f6', marginTop: 0 }}>Waiting Pickups (At Supplier)</h3>
-                {renderTable(waitingPickups, 'pickup')}
-            </div>
-
-            <div className="glass-panel">
-                <h3 style={{ color: '#8b5cf6', marginTop: 0 }}>In Warehouse (Ready for Route)</h3>
-                {renderTable(inWarehouse, 'load')}
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                <th style={{ padding: '0.8rem' }}>Supplier</th>
+                                <th style={{ padding: '0.8rem' }}>Recipient</th>
+                                <th style={{ padding: '0.8rem' }}>Location</th>
+                                <th style={{ padding: '0.8rem' }}>Qty</th>
+                                <th style={{ padding: '0.8rem' }}>Date</th>
+                                <th style={{ padding: '0.8rem' }}>Status</th>
+                                <th style={{ padding: '0.8rem', textAlign: 'right' }}>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {records.map(r => (
+                                <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <td style={{ padding: '0.8rem' }}>{r.supplierName || 'Unknown'}</td>
+                                    <td style={{ padding: '0.8rem' }}>{r.recipient}</td>
+                                    <td style={{ padding: '0.8rem' }}>{r.address || 'N/A'}</td>
+                                    <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{r.quantity}</td>
+                                    <td style={{ padding: '0.8rem' }}>{new Date(r.createdAt).toLocaleDateString()}</td>
+                                    <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{getStatusDisplay(r.status)}</td>
+                                    <td style={{ padding: '0.8rem', textAlign: 'right' }}>
+                                        {r.lastMileDriverId ? (
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                Assigned to: {r.lastMileDriverName}
+                                            </span>
+                                        ) : (
+                                            <button 
+                                                className="primary-button" 
+                                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                                                onClick={() => handleOpenAssign(r)}
+                                            >
+                                                Assign Route
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                            {records.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No records found.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {selectedRecord && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <div className="glass-panel" style={{ width: '90%', maxWidth: '400px', background: 'var(--bg-main)' }}>
-                        <h3 style={{ marginTop: 0 }}>Assign {actionType === 'pickup' ? 'Pickup' : 'Route Delivery'}</h3>
+                        <h3 style={{ marginTop: 0 }}>Assign Route Delivery</h3>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                             {selectedRecord.recipient} ({selectedRecord.quantity} items)
                         </p>
