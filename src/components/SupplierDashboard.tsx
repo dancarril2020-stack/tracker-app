@@ -582,7 +582,7 @@ export default function SupplierDashboard() {
                             </thead>
                             <tbody>
                                 {paginatedRequests.map(req => (
-                                    <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', opacity: req.status === 'supplier_cancelled' ? 0.6 : 1 }}>
+                                    <tr key={req.id} data-record-id={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', opacity: req.status === 'supplier_cancelled' ? 0.6 : 1 }}>
                                         <td style={{ padding: '0.5rem' }}>{new Date(req.createdAt).toLocaleDateString()}</td>
                                         <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{req.supplierReference}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.recipient}</td>

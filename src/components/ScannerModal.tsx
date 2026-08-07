@@ -11,6 +11,7 @@ export default function ScannerModal({ onClose, onScan }) {
             { fps: 10, qrbox: { width: 250, height: 250 } }, 
             /* verbose= */ false
         );
+        window.__simulateQRScan = onScan;
 
         scanner.render(
             (decodedText, decodedResult) => {
