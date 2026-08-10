@@ -1,5 +1,11 @@
+/**
+ * PickupTab.tsx
+ * Purpose: Allows office staff to assign pickups to drivers, and drivers to manage
+ * and process those pickups (including manual pickup entry and QR scanning).
+ */
 import React, { useState, useEffect } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant } from '../firebase';
+import { RecordItem, User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -12,7 +18,7 @@ export default function PickupTab() {
     const [isScanning, setIsScanning] = useState(false);
 
     // --- STATE FOR OFFICE (ASSIGNMENT) ---
-    const [drivers, setDrivers] = useState([]);
+    const [drivers, setDrivers] = useState<User[]>([]);
     const [selectedDriver, setSelectedDriver] = useState('');
     const [assignData, setAssignData] = useState({
         recipient: '',
@@ -26,8 +32,8 @@ export default function PickupTab() {
     });
 
     // --- STATE FOR DRIVER (PROCESSING) ---
-    const [viewMode, setViewMode] = useState('list'); // 'list' or 'manual'
-    const [assignedPickups, setAssignedPickups] = useState([]);
+    const [viewMode, setViewMode] = useState<'list' | 'manual'>('list'); // 'list' or 'manual'
+    const [assignedPickups, setAssignedPickups] = useState<RecordItem[]>([]);
     const [manualData, setManualData] = useState({
         recipient: '',
         remittance: '',
@@ -48,13 +54,15 @@ export default function PickupTab() {
     }, [userRole, currentUser]);
 
     const fetchDrivers = async () => {
-        const allUsers = await getUsersByTenant(tenantId);
+        const allUsers = await getUsersByTenant(tenantId || 'default');
         const driverList = allUsers.filter(u => u.role === 'driver' && u.active !== false);
         setDrivers(driverList);
         if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
     };
 
+    // Fetch pending pickup assignments for the driver.
     const fetchAssignedPickups = async () => {
+        if (!currentUser) return;
         setLoading(true);
         try {
             const q = query(
@@ -65,9 +73,9 @@ export default function PickupTab() {
                 where("tenantId", "==", tenantId || 'default')
             );
             const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
             // Sort by creation (oldest first or newest first)
-            data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setAssignedPickups(data);
         } catch (err) {
             console.error("Error fetching assignments:", err);
@@ -76,14 +84,15 @@ export default function PickupTab() {
     };
 
     // --- OFFICE: HANDLE ASSIGNMENT ---
-    const handleAssignChange = (e) => {
+    const handleAssignChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
         setAssignData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleAssignSubmit = async (e) => {
+    const handleAssignSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
         setLoading(true);
         try {
             const driverObj = drivers.find(d => d.uid === selectedDriver);
@@ -102,8 +111,8 @@ export default function PickupTab() {
             });
             await logAction(currentUser, ACTIONS.CREATE_ITEM, `Assigned Pickup to ${driverObj?.name || driverObj?.email || 'Unknown'} for ${assignData.recipient}`, assignRef.id);
             alert("Pickup Assigned Successfully!");
-            setAssignData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
-        } catch (err) {
+            setAssignData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '', session: '' });
+        } catch (err: any) {
             console.error(err);
             alert("Error assigning pickup");
         }
@@ -111,7 +120,9 @@ export default function PickupTab() {
     };
 
     // --- DRIVER: HANDLE PROCESS ASSIGNMENT ---
-    const handleProcessPickup = async (pickup) => {
+    // Registers a completed pickup, collects payment data, and manages potential debt.
+    const handleProcessPickup = async (pickup: RecordItem) => {
+        if (!currentUser) return;
         // Validation / Prompt for Reembolso
         let collectedValue = '';
         if (pickup.reembolso && pickup.reembolso !== '0') {
@@ -170,14 +181,16 @@ export default function PickupTab() {
             await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Completed pickup from ${pickup.recipient}`, pickup.id);
 
             fetchAssignedPickups(); // Refresh list
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error processing pickup: " + err.message);
         }
         setLoading(false);
     };
 
-    const handleScanPickup = async (payload) => {
+    // Processes QR code scans for pickups. Handles multi-package shipments by tracking scanned items.
+    const handleScanPickup = async (payload: { id: string, pkg?: string }) => {
+        if (!currentUser) return;
         if (!payload || !payload.id) {
             alert("Unrecognized QR Code.");
             return;
@@ -230,14 +243,14 @@ export default function PickupTab() {
                  alert(`Paquete ${payload.pkg}/${total} escaneado correctamente.`);
             }
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error updating scanned package: " + err.message);
         }
     };
 
     // --- DRIVER: HANDLE MANUAL PICKUP ---
-    const handleManualChange = (e) => {
+    const handleManualChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
         setManualData(prev => ({ ...prev, [name]: value }));
@@ -245,6 +258,7 @@ export default function PickupTab() {
 
     const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
         setLoading(true);
         try {
             const currentHour = new Date().getHours();
@@ -267,7 +281,7 @@ export default function PickupTab() {
             alert("Manual Pickup Registered!");
             setManualData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
             setViewMode('list');
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error registering pickup");
         }
@@ -363,15 +377,15 @@ export default function PickupTab() {
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                     <button
                         onClick={() => setViewMode('list')}
-                        className={`secondary-button ${viewMode === 'list' ? 'active-filter' : ''}`}
-                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: viewMode === 'list' ? 'var(--primary)' : 'var(--surface)' }}
+                        className="secondary-button active-filter"
+                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: 'var(--primary)' }}
                     >
                         Assigned
                     </button>
                     <button
                         onClick={() => setViewMode('manual')}
-                        className={`secondary-button ${viewMode === 'manual' ? 'active-filter' : ''}`}
-                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: viewMode === 'manual' ? 'var(--primary)' : 'var(--surface)' }}
+                        className="secondary-button"
+                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: 'var(--surface)' }}
                     >
                         Manual
                     </button>

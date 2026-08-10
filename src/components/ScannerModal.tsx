@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
-export default function ScannerModal({ onClose, onScan }) {
-    const scannerRef = useRef(null);
+export default function ScannerModal({ onClose, onScan }: { onClose: () => void, onScan: (data: any) => void }) {
+    // const scannerRef = useRef<HTMLDivElement>(null);
     const [scannedKeys, setScannedKeys] = useState(new Set()); // Debounce scanning
 
     useEffect(() => {
@@ -11,10 +11,10 @@ export default function ScannerModal({ onClose, onScan }) {
             { fps: 10, qrbox: { width: 250, height: 250 } }, 
             /* verbose= */ false
         );
-        window.__simulateQRScan = onScan;
+        (window as any).__simulateQRScan = onScan;
 
         scanner.render(
-            (decodedText, decodedResult) => {
+            (decodedText) => {
                 // To prevent scanning the same QR multiple times per second
                 if (!scannedKeys.has(decodedText)) {
                     setScannedKeys(prev => {
@@ -33,7 +33,7 @@ export default function ScannerModal({ onClose, onScan }) {
                     }
                 }
             },
-            (error) => {
+            () => {
                 // Typically you don't need to log every frame error
             }
         );

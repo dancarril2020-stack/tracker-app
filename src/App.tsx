@@ -1,3 +1,8 @@
+/**
+ * App.tsx
+ * Purpose: Main application component. Configures global providers (Auth, Theme)
+ * and implements role-based access control (RBAC) to route users to the appropriate tabs.
+ */
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
