@@ -1,47 +1,97 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
-export default function ScannerModal({ onClose, onScan }) {
-    const scannerRef = useRef(null);
-    const [scannedKeys, setScannedKeys] = useState(new Set()); // Debounce scanning
+// Global lock to prevent React 18 Strict Mode from running two scanner instances simultaneously
+let isScannerActive = false;
+
+export default function ScannerModal({ onClose, onScan }: { onClose: () => void, onScan: (data: any) => void }) {
+    const scannedKeysRef = useRef(new Set<string>()); // Debounce scanning
+    const onScanRef = useRef(onScan);
+
+    // Keep onScanRef updated
+    useEffect(() => {
+        onScanRef.current = onScan;
+    }, [onScan]);
 
     useEffect(() => {
-        const scanner = new Html5QrcodeScanner(
-            "reader", 
-            { fps: 10, qrbox: { width: 250, height: 250 } }, 
-            /* verbose= */ false
-        );
+        let scanner: Html5QrcodeScanner | null = null;
+        let isUnmounted = false;
+        let didAcquireLock = false;
 
-        scanner.render(
-            (decodedText, decodedResult) => {
-                // To prevent scanning the same QR multiple times per second
-                if (!scannedKeys.has(decodedText)) {
-                    setScannedKeys(prev => {
-                        const newSet = new Set(prev);
-                        newSet.add(decodedText);
-                        return newSet;
-                    });
-                    
-                    try {
-                        const payload = JSON.parse(decodedText);
-                        onScan(payload);
-                    } catch (e) {
-                         console.error("Invalid QR Code payload", e);
-                         // If not JSON, pass the raw text maybe? Or ignore.
-                         onScan({ raw: decodedText });
-                    }
-                }
-            },
-            (error) => {
-                // Typically you don't need to log every frame error
+        const initScanner = async () => {
+            // Spin-lock until any previous scanner finishes tearing down asynchronously
+            while (isScannerActive) {
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
-        );
+            
+            // If the component unmounted while we were waiting, abort initialization entirely
+            if (isUnmounted) return;
+
+            isScannerActive = true;
+            didAcquireLock = true;
+
+            // Wipe the container to guarantee a clean slate
+            const readerElement = document.getElementById("reader");
+            if (readerElement) {
+                readerElement.innerHTML = '';
+            }
+
+            try {
+                scanner = new Html5QrcodeScanner(
+                    "reader", 
+                    { fps: 10, qrbox: { width: 250, height: 250 } }, 
+                    /* verbose= */ false
+                );
+
+                // Required global assignment if html5-qrcode checks it (simulated click handler etc)
+                (window as any).__simulateQRScan = (data: any) => onScanRef.current(data);
+
+                scanner.render(
+                    (decodedText) => {
+                        // To prevent scanning the same QR multiple times per second
+                        if (!scannedKeysRef.current.has(decodedText)) {
+                            scannedKeysRef.current.add(decodedText);
+                            
+                            try {
+                                const payload = JSON.parse(decodedText);
+                                onScanRef.current(payload);
+                            } catch (e) {
+                                 console.error("Invalid QR Code payload", e);
+                                 // If not JSON, pass the raw text maybe? Or ignore.
+                                 onScanRef.current({ raw: decodedText });
+                            }
+                        }
+                    },
+                    (error) => {
+                        // Typically you don't need to log every frame error
+                    }
+                );
+            } catch (err) {
+                console.error("Failed to initialize scanner:", err);
+                isScannerActive = false;
+                didAcquireLock = false;
+            }
+        };
+
+        initScanner();
 
         // Cleanup
         return () => {
-            scanner.clear().catch(error => console.error("Failed to clear scanner", error));
+            isUnmounted = true;
+            if (scanner) {
+                // Clear is asynchronous, which is what caused the race condition.
+                // We only release the lock when it is FINISHED clearing.
+                scanner.clear().then(() => {
+                    isScannerActive = false;
+                }).catch(error => {
+                    console.error("Failed to clear scanner", error);
+                    isScannerActive = false;
+                });
+            } else if (didAcquireLock) {
+                isScannerActive = false;
+            }
         };
-    }, [onScan, scannedKeys]);
+    }, []);
 
     return (
         <div style={{
