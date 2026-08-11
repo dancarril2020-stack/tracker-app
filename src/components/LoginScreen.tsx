@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import logo from '../assets/logo3_tracker.png';
 import ThemeToggle from './ThemeToggle';
@@ -10,7 +10,7 @@ export default function LoginScreen() {
     const [loading, setLoading] = useState(false);
     const { login } = useAuth();
 
-    async function handleSubmit(e) {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         try {

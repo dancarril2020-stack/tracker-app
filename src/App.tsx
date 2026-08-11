@@ -1,3 +1,8 @@
+/**
+ * App.tsx
+ * Purpose: Main application component. Configures global providers (Auth, Theme)
+ * and implements role-based access control (RBAC) to route users to the appropriate tabs.
+ */
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -24,6 +29,7 @@ function AuthenticatedApp() {
   // --- BADGE STATE ---
   const [badges, setBadges] = useState({ deliveries: 0, pickups: 0, loads: 0 });
 
+  // Determine and set the default active tab based on user role permissions.
   useEffect(() => {
     if (isSuperAdmin) {
       setActiveTab('users');
@@ -37,6 +43,7 @@ function AuthenticatedApp() {
   }, [userRole]);
 
   // --- BADGE LISTENER (DRIVER ONLY) ---
+  // Listen for assigned tasks in Firestore to update driver notification badges.
   useEffect(() => {
     if (userRole !== 'driver' || !currentUser) {
       setBadges(prev => {
@@ -87,7 +94,7 @@ function AuthenticatedApp() {
 
   if (!currentUser) return <LoginScreen />;
 
-  // Badge Component
+  // Reusable Badge component for displaying notification counts on tabs.
   const Badge = ({ count }: { count: number }) => {
     if (count <= 0) return null;
     return (
@@ -132,6 +139,7 @@ function AuthenticatedApp() {
       </header>
 
       <div className="tabs">
+        {/* Render navigation tabs based on Role-Based Access Control (RBAC). */}
         {userRole === 'supplier' ? (
           <button className="tab-button active">Supplier Portal</button>
         ) : (

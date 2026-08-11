@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { db, collection, query, where, onSnapshot, doc, updateDoc, getUsersByTenant } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -15,7 +15,7 @@ export default function InboundTab() {
     const [selectedSession, setSelectedSession] = useState('morning');
 
     useEffect(() => {
-        getUsersByTenant(tenantId).then(users => {
+        getUsersByTenant(tenantId || 'default').then(users => {
             const drv = users.filter(u => u.role === 'driver');
             setDrivers(drv);
             if (drv.length > 0) setSelectedDriver(drv[0].uid);
@@ -25,10 +25,10 @@ export default function InboundTab() {
 
         const unsub = onSnapshot(q, snap => {
             const data = snap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
+                .map(d => ({ id: d.id, ...d.data() } as any))
                 .filter(d => ['supplier_submitted', 'picked_up_supplier', 'in_warehouse'].includes(d.status));
             
-            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            data.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
             setRecords(data);
         });
 

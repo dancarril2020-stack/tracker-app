@@ -1,4 +1,9 @@
-
+/**
+ * DeliveryForm.tsx
+ * Purpose: Handles the delivery operations for drivers, allowing them to view pending deliveries,
+ * scan packages, or manually register new deliveries. It supports status updates, failure reporting,
+ * and tracks reimbursement (reembolso) details.
+ */
 import React, { useState } from 'react';
 import { RecordItem, User } from '../types';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
@@ -25,7 +30,7 @@ export default function DeliveryForm() {
         address: '',
         observations: ''
     });
-    const [cardObservations, setCardObservations] = useState({}); // Track notes per card in list view
+    const [cardObservations, setCardObservations] = useState<Record<string, string>>({}); // Track notes per card in list view
     const [loading, setLoading] = useState(false);
 
     // Driver Selection State (for Office/Backoffice)
@@ -38,7 +43,7 @@ export default function DeliveryForm() {
     React.useEffect(() => {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
-                const allUsers = await getUsersByTenant(tenantId);
+                const allUsers = await getUsersByTenant(tenantId || 'default');
                 const driverList = allUsers.filter(u => u.role === 'driver');
                 setDrivers(driverList);
                 if (driverList.length > 0) {
@@ -46,7 +51,7 @@ export default function DeliveryForm() {
                 }
             } else {
                 // If driver, always themselves
-                setSelectedDriver(currentUser.uid);
+                setSelectedDriver(currentUser?.uid || '');
             }
         }
         fetchDrivers();
@@ -59,7 +64,9 @@ export default function DeliveryForm() {
         }
     }, [viewMode, activeSession]);
 
+    // Fetch loads that are pending delivery for the active session.
     const fetchPendingLoads = async () => {
+        if (!currentUser) return;
         setLoading(true);
         try {
             const today = new Date().toISOString().split('T')[0];
@@ -82,7 +89,7 @@ export default function DeliveryForm() {
                 );
             }
             const snapshot = await getDocs(q);
-            const data = snapshot.docs ? snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
+            const data = snapshot.docs ? snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) })) : [];
             // Sort by creation time (newest first)
             data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             console.log("DEBUG_FETCHED_LOADS", JSON.stringify(data.map(d => ({id: d.id, status: d.status, session: d.session, recipient: d.recipient, type: d.type, driverId: d.driverId}))));
@@ -114,6 +121,8 @@ export default function DeliveryForm() {
     };
 
     const confirmFailDelivery = async () => {
+        if (!failingLoad || !currentUser) return;
+        
         if (!failureReason.trim()) {
             alert("Please provide a reason.");
             return;
@@ -174,15 +183,18 @@ export default function DeliveryForm() {
             setFailingLoad(null); // Close modal
             fetchPendingLoads();
             // Optional: User might want to be redirected or just see the list update.
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error failing delivery:", err);
             alert("Error: " + err.message);
         }
         setLoading(false);
     };
 
+    // Process a delivery from the pending list.
+    // Handles status updates, creates a delivery record, and checks for payment shortfalls (debt).
     const handleDeliverFromList = async (e: React.MouseEvent | null, load: RecordItem) => {
         if (e && e.stopPropagation) e.stopPropagation(); // Prevent bubbling
+        if (!currentUser) return;
 
         setLoading(true);
         try {
@@ -220,10 +232,15 @@ export default function DeliveryForm() {
             }
 
             // 1. Create Delivery Record
+            let targetId = (userRole === 'office' || userRole === 'backoffice') && selectedDriver ? selectedDriver : currentUser.uid;
+            let targetName = (userRole === 'office' || userRole === 'backoffice') && selectedDriver 
+                ? (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || 'Unknown') 
+                : (currentUser.name || currentUser.email || 'Unknown');
+
             const deliveryRef = await addDoc(collection(db, "records"), {
                 type: 'delivery',
-                driverId: currentUser.uid,
-                driverName: currentUser.name || currentUser.email,
+                driverId: targetId,
+                driverName: targetName,
                 recipient: load.recipient,
                 remittance: load.remittance,
                 quantity: load.quantity,
@@ -282,7 +299,7 @@ export default function DeliveryForm() {
 
             // Refresh list
             fetchPendingLoads();
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error processing delivery:", err);
             alert("Error processing delivery: " + err.message);
         }
@@ -308,8 +325,10 @@ export default function DeliveryForm() {
 
 
 
+    // Manually register a delivery that wasn't pre-loaded or scanned.
     const handleSubmitManual = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
         if (!formData.recipient || !formData.remittance) {
             alert("Error: Recipient and Remittance are mandatory.");
             return;
@@ -608,7 +627,7 @@ export default function DeliveryForm() {
                                         ))}
                                     </select>
                                 ) : (
-                                    <input value={currentUser.name || currentUser.email} disabled style={{ opacity: 0.7 }} />
+                                    <input value={currentUser?.name || currentUser?.email || ''} disabled style={{ opacity: 0.7 }} />
                                 )}
                             </div>
                             <div style={{ textAlign: 'left' }}>
