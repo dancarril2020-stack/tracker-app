@@ -1,3 +1,8 @@
+/**
+ * SupplierDashboard.tsx
+ * Purpose: Provides a dashboard for suppliers to create loading requests,
+ * manage their recipient/product catalogs, and track the status of their shipments.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import { RecordItem, Recipient, Product } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -59,6 +64,7 @@ export default function SupplierDashboard() {
     const [recipientListSearch, setRecipientListSearch] = useState('');
     const [productListSearch, setProductListSearch] = useState('');
 
+    // Fetch supplier requests and dynamically load recipients/products on component mount.
     useEffect(() => {
         if (!currentUser) return;
 
@@ -116,6 +122,7 @@ export default function SupplierDashboard() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Handle form submission to create a new request in Firestore.
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentUser) return;
@@ -582,7 +589,7 @@ export default function SupplierDashboard() {
                             </thead>
                             <tbody>
                                 {paginatedRequests.map(req => (
-                                    <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', opacity: req.status === 'supplier_cancelled' ? 0.6 : 1 }}>
+                                    <tr key={req.id} data-record-id={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', opacity: req.status === 'supplier_cancelled' ? 0.6 : 1 }}>
                                         <td style={{ padding: '0.5rem' }}>{new Date(req.createdAt).toLocaleDateString()}</td>
                                         <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{req.supplierReference}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.recipient}</td>

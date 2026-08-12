@@ -37,3 +37,6 @@ test-failure.png
 debug_cumulative.js
 migrate-tenant-ids.js
 seed-users.js
+
+#Agent
+GEMINI.md

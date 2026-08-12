@@ -1,5 +1,11 @@
+/**
+ * PickupTab.tsx
+ * Purpose: Allows office staff to assign pickups to drivers, and drivers to manage
+ * and process those pickups (including manual pickup entry and QR scanning).
+ */
 import React, { useState, useEffect } from 'react';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant } from '../firebase';
+import { RecordItem, User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -12,7 +18,7 @@ export default function PickupTab() {
     const [isScanning, setIsScanning] = useState(false);
 
     // --- STATE FOR OFFICE (ASSIGNMENT) ---
-    const [drivers, setDrivers] = useState([]);
+    const [drivers, setDrivers] = useState<User[]>([]);
     const [selectedDriver, setSelectedDriver] = useState('');
     const [assignData, setAssignData] = useState({
         recipient: '',
@@ -26,8 +32,8 @@ export default function PickupTab() {
     });
 
     // --- STATE FOR DRIVER (PROCESSING) ---
-    const [viewMode, setViewMode] = useState('list'); // 'list' or 'manual'
-    const [assignedPickups, setAssignedPickups] = useState([]);
+    const [viewMode, setViewMode] = useState<'list' | 'manual'>('list'); // 'list' or 'manual'
+    const [assignedPickups, setAssignedPickups] = useState<RecordItem[]>([]);
     const [manualData, setManualData] = useState({
         recipient: '',
         remittance: '',
@@ -48,13 +54,15 @@ export default function PickupTab() {
     }, [userRole, currentUser]);
 
     const fetchDrivers = async () => {
-        const allUsers = await getUsersByTenant(tenantId);
+        const allUsers = await getUsersByTenant(tenantId || 'default');
         const driverList = allUsers.filter(u => u.role === 'driver' && u.active !== false);
         setDrivers(driverList);
         if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
     };
 
+    // Fetch pending pickup assignments for the driver.
     const fetchAssignedPickups = async () => {
+        if (!currentUser) return;
         setLoading(true);
         try {
             const q = query(
@@ -65,9 +73,9 @@ export default function PickupTab() {
                 where("tenantId", "==", tenantId || 'default')
             );
             const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
             // Sort by creation (oldest first or newest first)
-            data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setAssignedPickups(data);
         } catch (err) {
             console.error("Error fetching assignments:", err);
@@ -76,14 +84,15 @@ export default function PickupTab() {
     };
 
     // --- OFFICE: HANDLE ASSIGNMENT ---
-    const handleAssignChange = (e) => {
+    const handleAssignChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
         setAssignData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleAssignSubmit = async (e) => {
+    const handleAssignSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
         setLoading(true);
         try {
             const driverObj = drivers.find(d => d.uid === selectedDriver);
@@ -102,8 +111,8 @@ export default function PickupTab() {
             });
             await logAction(currentUser, ACTIONS.CREATE_ITEM, `Assigned Pickup to ${driverObj?.name || driverObj?.email || 'Unknown'} for ${assignData.recipient}`, assignRef.id);
             alert("Pickup Assigned Successfully!");
-            setAssignData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
-        } catch (err) {
+            setAssignData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '', session: '' });
+        } catch (err: any) {
             console.error(err);
             alert("Error assigning pickup");
         }
@@ -111,7 +120,9 @@ export default function PickupTab() {
     };
 
     // --- DRIVER: HANDLE PROCESS ASSIGNMENT ---
-    const handleProcessPickup = async (pickup) => {
+    // Registers a completed pickup, collects payment data, and manages potential debt.
+    const handleProcessPickup = async (pickup: RecordItem) => {
+        if (!currentUser) return;
         // Validation / Prompt for Reembolso
         let collectedValue = '';
         if (pickup.reembolso && pickup.reembolso !== '0') {
@@ -127,30 +138,19 @@ export default function PickupTab() {
             const today = new Date().toISOString().split('T')[0];
             const recordRef = doc(db, "records", pickup.id);
 
-            // 1. Mark the ASSIGNMENT as 'assignment_complete'
-            await updateDoc(recordRef, {
-                status: 'assignment_complete'
-            });
+            const currentHour = new Date().getHours();
+            const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
 
-            // 2. Create a NEW record for the ACTUAL PICKUP (Result)
-            const pickupResult = await addDoc(collection(db, "records"), {
-                type: 'pickup',
-                status: 'completed_pickup',
-                driverId: pickup.driverId,
-                driverName: pickup.driverName,
-                recipient: pickup.recipient,
-                remittance: pickup.remittance,
-                quantity: pickup.quantity,
-                volumen: pickup.volumen,
-                portes: pickup.portes,
-                address: pickup.address,
-                session: pickup.session,
-                tenantId: pickup.tenantId || tenantId || 'default',
+            // 1. Update the original assignment record to picked up and route to delivery session
+            await updateDoc(recordRef, {
+                status: 'picked_up_supplier',
+                session: sessionToAssign,
+                driverId: currentUser.uid,
+                driverName: currentUser.name || currentUser.email,
                 collectedValue: collectedValue || '0',
                 reembolso: collectedValue || pickup.reembolso || '',
                 expectedReembolso: pickup.reembolso || '',
                 completedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
                 date: today
             });
 
@@ -166,7 +166,7 @@ export default function PickupTab() {
                         remittance: pickup.remittance,
                         amount: shortfall.toFixed(2),
                         originalLoadId: pickup.id,
-                        deliveryId: pickupResult.id, // Linking to the pickup result
+                        deliveryId: pickup.id, // Linking to the original pickup
                         driverId: currentUser.uid,
                         driverName: currentUser.name || currentUser.email,
                         date: today,
@@ -178,17 +178,19 @@ export default function PickupTab() {
                 }
             }
 
-            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Completed pickup from ${pickup.recipient}`, pickupResult.id);
+            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Completed pickup from ${pickup.recipient}`, pickup.id);
 
             fetchAssignedPickups(); // Refresh list
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error processing pickup: " + err.message);
         }
         setLoading(false);
     };
 
-    const handleScanPickup = async (payload) => {
+    // Processes QR code scans for pickups. Handles multi-package shipments by tracking scanned items.
+    const handleScanPickup = async (payload: { id: string, pkg?: string }) => {
+        if (!currentUser) return;
         if (!payload || !payload.id) {
             alert("Unrecognized QR Code.");
             return;
@@ -204,7 +206,7 @@ export default function PickupTab() {
 
             const record = recordSnap.data();
             
-            if (record.status !== 'supplier_submitted' && record.status !== 'assigned') {
+            if (!['supplier_submitted', 'assigned', 'assigned_supplier_pickup'].includes(record.status)) {
                 alert(`Cannot scan for pickup. Status is already: ${record.status}`);
                 return;
             }
@@ -214,16 +216,21 @@ export default function PickupTab() {
                 scannedArr.push(payload.pkg);
             }
 
-            let updates = {
+            let updates: any = {
                 scannedAtPickup: scannedArr,
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email
             };
 
+            const currentHour = new Date().getHours();
+            const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
+
             const total = Number(record.quantity) || 1;
+            console.log("DEBUG_SCAN: pkg=", payload.pkg, "scannedArr=", scannedArr, "total=", total);
             if (scannedArr.length >= total) {
                 // All parts scanned, or it's just 1 part
                 updates.status = 'picked_up_supplier';
+                updates.session = sessionToAssign;
             }
 
             await updateDoc(recordRef, updates);
@@ -236,30 +243,34 @@ export default function PickupTab() {
                  alert(`Paquete ${payload.pkg}/${total} escaneado correctamente.`);
             }
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error updating scanned package: " + err.message);
         }
     };
 
     // --- DRIVER: HANDLE MANUAL PICKUP ---
-    const handleManualChange = (e) => {
+    const handleManualChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if (name === 'reembolso' && !/^[0-9,]*$/.test(value)) return;
         setManualData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleManualSubmit = async (e) => {
+    const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
         setLoading(true);
         try {
+            const currentHour = new Date().getHours();
+            const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
+
             const pickupRef = await addDoc(collection(db, "records"), {
                 type: 'pickup',
-                status: 'completed_pickup',
+                status: 'picked_up_supplier',
                 driverId: currentUser.uid,
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
-                session: activeSession,
+                session: sessionToAssign,
                 tenantId: tenantId || 'default',
                 collectedValue: manualData.reembolso || '0',
                 expectedReembolso: manualData.reembolso || '',
@@ -270,7 +281,7 @@ export default function PickupTab() {
             alert("Manual Pickup Registered!");
             setManualData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
             setViewMode('list');
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error registering pickup");
         }
@@ -366,15 +377,15 @@ export default function PickupTab() {
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                     <button
                         onClick={() => setViewMode('list')}
-                        className={`secondary-button ${viewMode === 'list' ? 'active-filter' : ''}`}
-                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: viewMode === 'list' ? 'var(--primary)' : 'var(--surface)' }}
+                        className="secondary-button active-filter"
+                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: 'var(--primary)' }}
                     >
                         Assigned
                     </button>
                     <button
                         onClick={() => setViewMode('manual')}
-                        className={`secondary-button ${viewMode === 'manual' ? 'active-filter' : ''}`}
-                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: viewMode === 'manual' ? 'var(--primary)' : 'var(--surface)' }}
+                        className="secondary-button"
+                        style={{ flex: 1, padding: '0.8rem', fontSize: '1rem', background: 'var(--surface)' }}
                     >
                         Manual
                     </button>

@@ -1,4 +1,10 @@
+/**
+ * LoadingTab.tsx
+ * Purpose: Manages the loading process for drivers. Drivers can view their assigned loads,
+ * scan items into their truck, and mark loads as pending delivery.
+ */
 import React, { useState, useEffect } from 'react';
+import { RecordItem, User } from '../types';
 import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant, onSnapshot } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
@@ -6,7 +12,7 @@ import { logAction, ACTIONS } from '../utils/audit';
 import ScannerModal from './ScannerModal';
 import EditModal from './EditModal';
 
-export default function LoadingTab({ onCompleteLoad }) {
+export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => void }) {
     const { currentUser, userRole, tenantId } = useAuth();
 
     // UI State
@@ -14,15 +20,15 @@ export default function LoadingTab({ onCompleteLoad }) {
     const [activeSession, setActiveSession] = useState(getCurrentSession());
     const [isScanning, setIsScanning] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [editingRecord, setEditingRecord] = useState(null);
+    const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
     // Data State
-    const [assignedLoads, setAssignedLoads] = useState([]);
-    const [loadedLoads, setLoadedLoads] = useState([]);
-    const [allDailyRecords, setAllDailyRecords] = useState([]); // For Metric Stability
+    const [assignedLoads, setAssignedLoads] = useState<RecordItem[]>([]);
+    const [loadedLoads, setLoadedLoads] = useState<RecordItem[]>([]);
+    // const [allDailyRecords, setAllDailyRecords] = useState<RecordItem[]>([]); // For Metric Stability
 
     // Form State (for creating assignments)
-    const [drivers, setDrivers] = useState([]);
+    const [drivers, setDrivers] = useState<User[]>([]);
     const [selectedDriver, setSelectedDriver] = useState('');
     const [formData, setFormData] = useState({
         recipient: '',
@@ -37,23 +43,26 @@ export default function LoadingTab({ onCompleteLoad }) {
     useEffect(() => {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
-                const allUsers = await getUsersByTenant(tenantId);
+                const allUsers = await getUsersByTenant(tenantId || 'default');
                 const driverList = allUsers.filter(u => u.role === 'driver' && u.active !== false);
                 setDrivers(driverList);
                 if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
             } else {
-                setSelectedDriver(currentUser.uid);
+                if (currentUser) {
+                    setSelectedDriver(currentUser.uid);
+                }
             }
         }
         fetchDrivers();
     }, [userRole, currentUser]);
 
     // --- 2. FETCH LOADS (Real-time) ---
+    // Subscribes to Firestore to fetch assigned and active loads for the targeted driver.
     useEffect(() => {
         const today = new Date().toISOString().split('T')[0];
         const recordsRef = collection(db, "records");
 
-        const targetDriverId = (userRole === 'office' || userRole === 'backoffice') ? selectedDriver : currentUser.uid;
+        const targetDriverId = (userRole === 'office' || userRole === 'backoffice') ? selectedDriver : (currentUser ? currentUser.uid : null);
 
         if (!targetDriverId) return;
 
@@ -67,7 +76,7 @@ export default function LoadingTab({ onCompleteLoad }) {
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const allRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const allRecords = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
 
             // 1. Assigned (Waiting)
             const assigned = allRecords.filter(l => l.type === 'load' && l.status === 'assigned_load');
@@ -79,7 +88,7 @@ export default function LoadingTab({ onCompleteLoad }) {
 
             setAssignedLoads(assigned);
             setLoadedLoads(matchedLoaded);
-            setAllDailyRecords(allRecords);
+            // setAllDailyRecords(allRecords);
             console.log(`[DEBUG] LoadingTab: Found ${assigned.length} assigned loads for driver ${targetDriverId}`);
         });
 
@@ -88,13 +97,16 @@ export default function LoadingTab({ onCompleteLoad }) {
 
     // --- 3. ACTIONS ---
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = async (e) => {
+    // Handles manual assignment creation from the office, or driver self-assignment.
+    // Checks if a matching load exists to combine quantities, otherwise creates a new record.
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
 
         let targetDriverId = currentUser.uid;
         let targetDriverName = currentUser.name || currentUser.email;
@@ -162,15 +174,16 @@ export default function LoadingTab({ onCompleteLoad }) {
             }
 
             setFormData({ recipient: '', remittance: '', quantity: '', volumen: '', reembolso: '', address: '' });
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error: " + err.message);
         }
         setLoading(false);
     };
 
-    const handleLoadAction = async (load) => {
+    const handleLoadAction = async (load: RecordItem) => {
         if (!window.confirm(`Confirm loading: ${load.recipient}?`)) return;
+        if (!currentUser) return;
         setLoading(true);
         try {
             await updateDoc(doc(db, "records", load.id), {
@@ -178,14 +191,15 @@ export default function LoadingTab({ onCompleteLoad }) {
                 loadedAt: new Date().toISOString()
             });
             await logAction(currentUser, ACTIONS.UPDATE, `Driver loaded items for ${load.recipient}`, load.id);
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error updating load: " + err.message);
         }
         setLoading(false);
     };
 
-    const handleScanLoad = async (payload) => {
+    // Handles loading a package by scanning its QR code.
+    const handleScanLoad = async (payload: { id: string }) => {
         if (!payload || !payload.id) {
             alert("Unrecognized QR Code.");
             return;
@@ -214,7 +228,7 @@ export default function LoadingTab({ onCompleteLoad }) {
             }
 
             // Verify driver
-            if (record.driverId !== currentUser.uid) {
+            if (!currentUser || record.driverId !== currentUser.uid) {
                 alert("This package is assigned to another driver.");
                 return;
             }
@@ -228,24 +242,21 @@ export default function LoadingTab({ onCompleteLoad }) {
             alert(`Carga confirmada para ${record.recipient}`);
             setIsScanning(false);
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Error updating scanned package: " + err.message);
         }
     };
 
     // Stable Metric Calculation (Filtered by Session)
-    const sessionRecords = allDailyRecords.filter(r => r.session === activeSession);
-    const totalAssignedQty = sessionRecords.filter(l => l.status === 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
-    const totalLoadedAndDeliveredQty = sessionRecords.filter(l => l.status !== 'assigned_load').reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
 
     // --- HELPER FOR CARD STYLE ---
-    const getStatusColor = (record) => {
+    const getStatusColor = (record: RecordItem) => {
         if (record.status === 'assigned_load') return '#f59e0b';
         return '#3b82f6';
     };
 
-    const renderCard = (record) => (
+    const renderCard = (record: RecordItem) => (
         <div key={record.id} className="card" style={{ borderLeft: `4px solid ${getStatusColor(record)}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
@@ -478,7 +489,7 @@ export default function LoadingTab({ onCompleteLoad }) {
                 <EditModal
                     record={editingRecord}
                     onClose={() => setEditingRecord(null)}
-                    onSave={() => {
+                    onUpdate={() => {
                         setEditingRecord(null);
                         // No need to fetch manually, onSnapshot handles it
                     }}

@@ -35,7 +35,7 @@ export interface AuthContextType {
 
 export interface RecordItem {
   id: string;
-  type: 'pickup' | 'delivery' | 'warehouse';
+  type: 'pickup' | 'delivery' | 'warehouse' | 'load' | 'delivery_failed';
   status: string;
   supplierId?: string;
   supplierName?: string;
@@ -46,13 +46,20 @@ export interface RecordItem {
   zipCode?: string;
   phone?: string;
   quantity?: number | string;
+  deliveredQuantity?: number | string;
   volumen?: string;
   reembolso?: number | string;
+  expectedReembolso?: number | string;
+  collectedValue?: number | string;
   supplierReference?: string;
   remittance?: string;
   createdAt: string;
   date?: string;
   assignedDriver?: string;
+  driverId?: string;
+  driverName?: string;
+  assignedByName?: string;
+  session?: string;
   scannedAtPickup?: string[];
   scannedAtLoad?: string[];
   comments?: string;
@@ -61,4 +68,10 @@ export interface RecordItem {
   hasBankAccount?: boolean;
   portesPaymentType?: 'debidos' | 'pagados';
   observations?: string;
+  failureReason?: string;
+  linkedLoadId?: string;
+  lastMileDriverId?: string;
+  lastMileDriverName?: string;
+  lastMileSession?: string;
+  auditHistory?: any[];
 }
