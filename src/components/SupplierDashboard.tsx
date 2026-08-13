@@ -575,11 +575,12 @@ export default function SupplierDashboard() {
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1000px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                    <th style={{ padding: '0.5rem' }}>Date</th>
+                                    <th style={{ padding: '0.5rem' }}>Date & Time</th>
                                     <th style={{ padding: '0.5rem' }}>Invoice No.</th>
                                     <th style={{ padding: '0.5rem' }}>Recipient</th>
                                     <th style={{ padding: '0.5rem' }}>Address</th>
                                     <th style={{ padding: '0.5rem' }}>Transport Client</th>
+                                    <th style={{ padding: '0.5rem' }}>Driver</th>
                                     <th style={{ padding: '0.5rem' }}>Qty</th>
                                     <th style={{ padding: '0.5rem' }}>Weight/Obs</th>
                                     <th style={{ padding: '0.5rem' }}>REEMB (€)</th>
@@ -590,11 +591,12 @@ export default function SupplierDashboard() {
                             <tbody>
                                 {paginatedRequests.map(req => (
                                     <tr key={req.id} data-record-id={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', opacity: req.status === 'supplier_cancelled' ? 0.6 : 1 }}>
-                                        <td style={{ padding: '0.5rem' }}>{new Date(req.createdAt).toLocaleDateString()}</td>
+                                        <td style={{ padding: '0.5rem' }}>{new Date(req.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
                                         <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{req.supplierReference}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.recipient}</td>
                                         <td style={{ padding: '0.5rem', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={req.address}>{req.address}</td>
                                         <td style={{ padding: '0.5rem', textTransform: 'uppercase' }}>{req.tenantId}</td>
+                                        <td style={{ padding: '0.5rem' }}>{req.driverName || '-'}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.quantity}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.volumen || '-'}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.reembolso || '0'}</td>
