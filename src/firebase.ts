@@ -9,7 +9,8 @@ import {
     signInWithEmailAndPassword,
     signOut,
     onAuthStateChanged,
-    createUserWithEmailAndPassword
+    createUserWithEmailAndPassword,
+    sendPasswordResetEmail
 } from "firebase/auth";
 import { User } from './types';
 import {
@@ -134,6 +135,7 @@ export {
     signOut,
     onAuthStateChanged,
     createUserWithEmailAndPassword,
+    sendPasswordResetEmail,
     collection,
     doc,
     getDoc,

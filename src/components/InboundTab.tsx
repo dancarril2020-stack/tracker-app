@@ -101,11 +101,14 @@ export default function InboundTab() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}>
                         <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                <th style={{ padding: '0.8rem' }}>Date & Time</th>
+                                <th style={{ padding: '0.8rem' }}>Invoice No.</th>
                                 <th style={{ padding: '0.8rem' }}>Supplier</th>
                                 <th style={{ padding: '0.8rem' }}>Recipient</th>
                                 <th style={{ padding: '0.8rem' }}>Location</th>
+                                <th style={{ padding: '0.8rem' }}>Driver</th>
                                 <th style={{ padding: '0.8rem' }}>Qty</th>
-                                <th style={{ padding: '0.8rem' }}>Date</th>
+                                <th style={{ padding: '0.8rem' }}>Reemb (€)</th>
                                 <th style={{ padding: '0.8rem' }}>Status</th>
                                 <th style={{ padding: '0.8rem', textAlign: 'right' }}>Action</th>
                             </tr>
@@ -113,11 +116,14 @@ export default function InboundTab() {
                         <tbody>
                             {records.map(r => (
                                 <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <td style={{ padding: '0.8rem' }}>{new Date(r.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                                    <td style={{ padding: '0.8rem', fontFamily: 'monospace' }}>{r.supplierReference || '-'}</td>
                                     <td style={{ padding: '0.8rem' }}>{r.supplierName || 'Unknown'}</td>
                                     <td style={{ padding: '0.8rem' }}>{r.recipient}</td>
                                     <td style={{ padding: '0.8rem' }}>{r.address || 'N/A'}</td>
+                                    <td style={{ padding: '0.8rem' }}>{r.driverName || '-'}</td>
                                     <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{r.quantity}</td>
-                                    <td style={{ padding: '0.8rem' }}>{new Date(r.createdAt).toLocaleDateString()}</td>
+                                    <td style={{ padding: '0.8rem' }}>{r.reembolso || '0'}</td>
                                     <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{getStatusDisplay(r.status)}</td>
                                     <td style={{ padding: '0.8rem', textAlign: 'right' }}>
                                         {r.lastMileDriverId ? (

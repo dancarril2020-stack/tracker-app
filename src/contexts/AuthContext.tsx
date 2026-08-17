@@ -14,7 +14,8 @@ import {
     createUserWithEmailAndPassword,
     doc,
     getDoc,
-    setDoc
+    setDoc,
+    sendPasswordResetEmail
 } from '../firebase';
 
 
@@ -44,6 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     function logout() {
         return signOut(auth);
+    }
+
+    /**
+     * Sends a password reset email to the specified address.
+     * Uses the default Firebase Auth email templates.
+     */
+    function resetPassword(email: string): Promise<void> {
+        return sendPasswordResetEmail(auth, email);
     }
 
     // Admin function to create users (Place in dedicated Admin context later or keep here if simple)
@@ -131,7 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         logout,
-        registerUser
+        registerUser,
+        resetPassword
     };
 
     return (

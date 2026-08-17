@@ -31,6 +31,7 @@ export interface AuthContextType {
   login: (email: string, pass: string) => Promise<any>;
   logout: () => Promise<void>;
   registerUser: (email: string, password: string, role: string, name: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 export interface RecordItem {
