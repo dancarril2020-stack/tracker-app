@@ -84,12 +84,14 @@ export default function SupplierDashboard() {
         // Fetch dynamic data
         const fetchDynamicData = async () => {
             try {
-                const recSnapshot = await getDocs(collection(db, "recipients"));
+                const recQ = query(collection(db, "recipients"), where("supplierId", "==", currentUser.uid));
+                const recSnapshot = await getDocs(recQ);
                 const recList: Recipient[] = [];
                 recSnapshot.forEach(doc => recList.push({ id: doc.id, ...doc.data() } as Recipient));
                 setRecipientsList(recList);
 
-                const prodSnapshot = await getDocs(collection(db, "products"));
+                const prodQ = query(collection(db, "products"), where("supplierId", "==", currentUser.uid));
+                const prodSnapshot = await getDocs(prodQ);
                 const prodList: Product[] = [];
                 prodSnapshot.forEach(doc => prodList.push({ id: doc.id, ...doc.data() } as Product));
                 setProductsList(prodList);
@@ -172,16 +174,18 @@ export default function SupplierDashboard() {
 
     // --- CATALOG HANDLERS ---
     const handleAddRecipient = async () => {
+        if (!currentUser) return;
         if (!recipientForm.name || !recipientForm.address || !recipientForm.zipCode || !recipientForm.phone) {
             alert('Please fill in all recipient fields.');
             return;
         }
         try {
-            await addDoc(collection(db, 'recipients'), recipientForm);
+            await addDoc(collection(db, 'recipients'), { ...recipientForm, supplierId: currentUser.uid });
             setRecipientForm({ name: '', address: '', zipCode: '', phone: '', hasBankAccount: false });
             setShowAddRecipient(false);
             // Refresh the list used by the invoice autocomplete too
-            const snap = await getDocs(collection(db, 'recipients'));
+            const recQ = query(collection(db, "recipients"), where("supplierId", "==", currentUser.uid));
+            const snap = await getDocs(recQ);
             const list: Recipient[] = [];
             snap.forEach(d => list.push({ id: d.id, ...d.data() } as Recipient));
             setRecipientsList(list);
@@ -201,16 +205,18 @@ export default function SupplierDashboard() {
     };
 
     const handleAddProduct = async () => {
+        if (!currentUser) return;
         if (!productForm.name || !productForm.weightObs) {
             alert('Please fill in all product fields.');
             return;
         }
         try {
-            await addDoc(collection(db, 'products'), productForm);
+            await addDoc(collection(db, 'products'), { ...productForm, supplierId: currentUser.uid });
             setProductForm({ name: '', weightObs: '' });
             setShowAddProduct(false);
             // Refresh the list used by the invoice autocomplete too
-            const snap = await getDocs(collection(db, 'products'));
+            const prodQ = query(collection(db, "products"), where("supplierId", "==", currentUser.uid));
+            const snap = await getDocs(prodQ);
             const list: Product[] = [];
             snap.forEach(d => list.push({ id: d.id, ...d.data() } as Product));
             setProductsList(list);
