@@ -28,7 +28,7 @@ export function getCurrentSession() {
  * @param {string} session 
  * @returns {string}
  */
-export function formatSessionLabel(session) {
+export function formatSessionLabel(session: string) {
     if (session === 'morning') return 'Morning (up to 13:30)';
     if (session === 'afternoon') return 'Afternoon (after 13:30)';
     return 'Unknown Session';

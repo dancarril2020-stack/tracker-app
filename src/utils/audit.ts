@@ -10,10 +10,10 @@ export const ACTIONS = {
     DELETE_DELIVERY: 'Delete Delivery',
     PICKUP_ITEM: 'Pick-up',
     DELIVERY_FAILED: 'Delivery Failed',
+    UPDATE: 'Update',
     LOGIN: 'Login' // Optional, but good for tracking
 };
 
-import { User } from './types';
 
 /**
  * Logs a user action to the 'audit_logs' collection.

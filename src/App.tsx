@@ -1,3 +1,8 @@
+/**
+ * App.tsx
+ * Purpose: Main application component. Configures global providers (Auth, Theme)
+ * and implements role-based access control (RBAC) to route users to the appropriate tabs.
+ */
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -24,6 +29,7 @@ function AuthenticatedApp() {
   // --- BADGE STATE ---
   const [badges, setBadges] = useState({ deliveries: 0, pickups: 0, loads: 0 });
 
+  // Determine and set the default active tab based on user role permissions.
   useEffect(() => {
     if (isSuperAdmin) {
       setActiveTab('users');
@@ -37,6 +43,7 @@ function AuthenticatedApp() {
   }, [userRole]);
 
   // --- BADGE LISTENER (DRIVER ONLY) ---
+  // Listen for assigned tasks in Firestore to update driver notification badges.
   useEffect(() => {
     if (userRole !== 'driver' || !currentUser) {
       setBadges(prev => {
@@ -87,7 +94,7 @@ function AuthenticatedApp() {
 
   if (!currentUser) return <LoginScreen />;
 
-  // Badge Component
+  // Reusable Badge component for displaying notification counts on tabs.
   const Badge = ({ count }: { count: number }) => {
     if (count <= 0) return null;
     return (
@@ -115,23 +122,50 @@ function AuthenticatedApp() {
 
   return (
     <>
-      <header style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
-        <div style={{ position: 'absolute', top: 0, right: 0 }}>
-          <ThemeToggle />
+      <header style={{ 
+        marginBottom: '2rem', 
+        padding: '1.5rem',
+        background: 'var(--surface)',
+        boxShadow: 'var(--glass-shadow)',
+        borderRadius: '12px',
+        border: '1px solid var(--border)',
+        display: 'flex', 
+        flexDirection: 'column', 
+        position: 'relative',
+        width: '100%',
+        boxSizing: 'border-box'
+      }}>
+        {/* Top Center Logo */}
+        <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '1rem' }}>
+          <img src={logo} alt="TVR Logo" style={{ height: '60px', width: 'auto' }} />
         </div>
-        <img src={logo} alt="TVR Logo" style={{ height: '60px', width: 'auto' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: '800px', alignItems: 'center' }}>
+
+        {/* Content Row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-start' }}>
+          
           <div style={{ textAlign: 'left' }}>
-            <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-main)' }}>TVR Logistics {tenantId}</h1>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--primary)' }}>{userRole?.toUpperCase()} : {currentUser.email}</p>
+            <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-main)', marginBottom: '0.25rem' }}>TVR Logistics {tenantId}</h1>
+            <div style={{ margin: 0, fontSize: '0.8rem', color: 'var(--primary)', display: 'flex', gap: '4px' }}>
+              <strong>{userRole?.toUpperCase()} :</strong>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span>{currentUser.email}</span>
+                <span>{currentUser.name}</span>
+              </div>
+            </div>
           </div>
-          <button onClick={logout} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--primary)' }}>
-            Log Out
-          </button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1rem' }}>
+            <ThemeToggle />
+            <button onClick={logout} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--primary)' }}>
+              Log Out
+            </button>
+          </div>
+          
         </div>
       </header>
 
       <div className="tabs">
+        {/* Render navigation tabs based on Role-Based Access Control (RBAC). */}
         {userRole === 'supplier' ? (
           <button className="tab-button active">Supplier Portal</button>
         ) : (

@@ -13,13 +13,13 @@ export default function UserManagement() {
         email: '',
         password: '',
         role: 'driver',
-        tenantId: tenantId === 'admin' ? '' : tenantId,
+        tenantId: tenantId === 'admin' ? '' : (tenantId || ''),
         supplierCompanyName: ''
     });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [, setLoading] = useState(false);
 
     useEffect(() => {
         loadUsers();
@@ -27,8 +27,8 @@ export default function UserManagement() {
 
     async function loadUsers() {
         try {
-            const userList = isSuperAdmin ? await getUsers() : await getUsersByTenant(tenantId);
-            setUsers(userList);
+            const userList = isSuperAdmin ? await getUsers() : await getUsersByTenant(tenantId || 'default');
+            setUsers(userList as User[]);
         } catch (err) {
             console.error("Error loading users:", err);
             setError("Failed to load users.");
@@ -53,11 +53,11 @@ export default function UserManagement() {
                 email: '',
                 password: '',
                 role: 'driver',
-                tenantId: isSuperAdmin ? formData.tenantId : tenantId,
+                tenantId: isSuperAdmin ? formData.tenantId : (tenantId || ''),
                 supplierCompanyName: ''
             });
             await loadUsers(); // Refresh list
-        } catch (err) {
+        } catch (err: any) {
             setError(err.message);
         } finally {
             setLoading(false);
@@ -78,7 +78,7 @@ export default function UserManagement() {
 
             setSuccess(`User status updated successfully.`);
             await loadUsers();
-        } catch (err) {
+        } catch (err: any) {
             setError(err.message);
         } finally {
             setLoading(false);
@@ -174,7 +174,7 @@ export default function UserManagement() {
                                 type="text"
                                 required
                                 placeholder="e.g. amazon-logistics"
-                                value={formData.tenantId}
+                                value={formData.tenantId || ''}
                                 onChange={e => setFormData({ ...formData, tenantId: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
                             />
                         </div>

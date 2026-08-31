@@ -186,3 +186,17 @@ select:focus {
 .animate-fade-in {
   animation: fadeIn 0.4s ease-out forwards;
 }
+
+/* Text Button: Used for plain text links like "Forgot Password?" to strip default button styles */
+.text-button {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.text-button:hover {
+  background-color: transparent;
+  transform: none;
+  box-shadow: none;
+  text-decoration: none;
+}

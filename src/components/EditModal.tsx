@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { db, doc, updateDoc, arrayUnion, query, collection, where, getDocs } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 
 import { useAuth } from '../contexts/AuthContext';
 
-export default function EditModal({ record, onClose, onUpdate }) {
+import { RecordItem } from '../types';
+
+export default function EditModal({ record, onClose, onUpdate }: { record: RecordItem, onClose: () => void, onUpdate: () => void }) {
     const { currentUser } = useAuth();
     const [formData, setFormData] = useState({ ...record });
     const [loading, setLoading] = useState(false);
@@ -21,13 +23,13 @@ export default function EditModal({ record, onClose, onUpdate }) {
         };
     }, []);
 
-    const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         // Basic validation for numeric fields
         if ((name === 'reembolso' || name === 'collectedValue') && !/^[0-9,.]*$/.test(value)) return;
 
         setFormData(prev => {
-            const newData = { ...prev, [name]: value };
+            const newData = { ...prev, [name]: value } as typeof prev;
 
             // Auto-sync: If user edits 'reembolso' and 'collectedValue' was same as 'reembolso', update 'collectedValue' too.
             // This handles the case where Office edits a standard delivery price and expects the "Total" (collected) to update.
@@ -43,7 +45,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
         });
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
@@ -61,13 +63,14 @@ export default function EditModal({ record, onClose, onUpdate }) {
                 session: 'Session'
             };
 
-            const changes = [];
+            const changes: string[] = [];
             Object.keys(fieldsToTrack).forEach(key => {
-                const oldVal = (record[key] || '').toString().trim();
-                const newVal = (formData[key] || '').toString().trim();
+                const k = key as keyof typeof fieldsToTrack;
+                const oldVal = ((record as any)[k] || '').toString().trim();
+                const newVal = ((formData as any)[k] || '').toString().trim();
 
                 if (oldVal !== newVal) {
-                    changes.push(`${fieldsToTrack[key]}: ${oldVal || '(empty)'} → ${newVal || '(empty)'}`);
+                    changes.push(`${fieldsToTrack[k]}: ${oldVal || '(empty)'} → ${newVal || '(empty)'}`);
                 }
             });
 
@@ -125,7 +128,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
 
                 const identifiersChanged = record.remittance !== formData.remittance || record.recipient !== formData.recipient;
 
-                const updateLoadCascade = async (remittance, recipient) => {
+                const updateLoadCascade = async (remittance: string | undefined, recipient: string | undefined) => {
                     const q = query(
                         collection(db, "records"),
                         where("type", "==", "load"),
@@ -213,7 +216,7 @@ export default function EditModal({ record, onClose, onUpdate }) {
             alert("Record updated successfully.");
             onUpdate(); // Trigger refresh in parent
             onClose();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
             alert("Failed to update record: " + err.message);
         }

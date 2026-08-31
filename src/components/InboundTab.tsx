@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { db, collection, query, where, onSnapshot, doc, updateDoc, getUsersByTenant } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -15,7 +15,7 @@ export default function InboundTab() {
     const [selectedSession, setSelectedSession] = useState('morning');
 
     useEffect(() => {
-        getUsersByTenant(tenantId).then(users => {
+        getUsersByTenant(tenantId || 'default').then(users => {
             const drv = users.filter(u => u.role === 'driver');
             setDrivers(drv);
             if (drv.length > 0) setSelectedDriver(drv[0].uid);
@@ -25,10 +25,10 @@ export default function InboundTab() {
 
         const unsub = onSnapshot(q, snap => {
             const data = snap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
+                .map(d => ({ id: d.id, ...d.data() } as any))
                 .filter(d => ['supplier_submitted', 'picked_up_supplier', 'in_warehouse'].includes(d.status));
             
-            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            data.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
             setRecords(data);
         });
 
@@ -105,8 +105,9 @@ export default function InboundTab() {
                                 <th style={{ padding: '0.8rem' }}>Supplier</th>
                                 <th style={{ padding: '0.8rem' }}>Recipient</th>
                                 <th style={{ padding: '0.8rem' }}>Location</th>
+                                <th style={{ padding: '0.8rem' }}>Driver</th>
                                 <th style={{ padding: '0.8rem' }}>Qty</th>
-                                <th style={{ padding: '0.8rem' }}>Date</th>
+                                <th style={{ padding: '0.8rem' }}>Reemb (€)</th>
                                 <th style={{ padding: '0.8rem' }}>Status</th>
                                 <th style={{ padding: '0.8rem', textAlign: 'right' }}>Action</th>
                             </tr>
@@ -114,11 +115,14 @@ export default function InboundTab() {
                         <tbody>
                             {records.map(r => (
                                 <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <td style={{ padding: '0.8rem' }}>{new Date(r.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                                    <td style={{ padding: '0.8rem', fontFamily: 'monospace' }}>{r.supplierReference || '-'}</td>
                                     <td style={{ padding: '0.8rem' }}>{r.supplierName || 'Unknown'}</td>
                                     <td style={{ padding: '0.8rem' }}>{r.recipient}</td>
                                     <td style={{ padding: '0.8rem' }}>{r.address || 'N/A'}</td>
+                                    <td style={{ padding: '0.8rem' }}>{r.driverName || '-'}</td>
                                     <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{r.quantity}</td>
-                                    <td style={{ padding: '0.8rem' }}>{new Date(r.createdAt).toLocaleDateString()}</td>
+                                    <td style={{ padding: '0.8rem' }}>{r.reembolso || '0'}</td>
                                     <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{getStatusDisplay(r.status)}</td>
                                     <td style={{ padding: '0.8rem', textAlign: 'right' }}>
                                         {r.lastMileDriverId ? (

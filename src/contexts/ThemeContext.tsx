@@ -1,3 +1,8 @@
+/**
+ * ThemeContext.tsx
+ * Purpose: Manages global theme state (light vs dark mode), persists user
+ * preference to localStorage, and provides a toggle function.
+ */
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';
@@ -29,6 +34,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     });
 
+    // Apply the selected theme to the DOM and persist it in localStorage.
     useEffect(() => {
         const root = document.documentElement;
 

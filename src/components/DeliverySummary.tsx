@@ -1,5 +1,11 @@
+/**
+ * DeliverySummary.tsx
+ * Purpose: Provides a comprehensive dashboard for drivers and office staff to view daily performance,
+ * filter loads, generate PDF reports, and export/import CSV data.
+ */
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, getUsersByTenant, updateDoc, setDoc } from '../firebase';
+import { RecordItem, User } from '../types';
+import { db, collection, query, where, getDocs, deleteDoc, doc, getUsersByTenant, updateDoc, setDoc } from '../firebase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 import { generateCSV, parseCSV } from '../utils/csvHelper'; // Import CSV helper
 import { jsPDF } from 'jspdf';
@@ -10,14 +16,14 @@ import EditModal from './EditModal';
 
 export default function DeliverySummary() {
     const { currentUser, userRole, tenantId } = useAuth();
-    const [records, setRecords] = useState([]);
+    const [records, setRecords] = useState<RecordItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [summaryDate, setSummaryDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedSession, setSelectedSession] = useState('all'); // 'all', 'morning', 'afternoon'
-    const [editingRecord, setEditingRecord] = useState(null);
+    const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
     // Driver Filter State
-    const [drivers, setDrivers] = useState([]);
+    const [drivers, setDrivers] = useState<User[]>([]);
     const [selectedDriver, setSelectedDriver] = useState('all');
 
     // Search State
@@ -30,7 +36,7 @@ export default function DeliverySummary() {
     useEffect(() => {
         async function fetchDrivers() {
             if (userRole === 'office' || userRole === 'backoffice') {
-                const allUsers = await getUsersByTenant(tenantId);
+                const allUsers = await getUsersByTenant(tenantId || 'default');
                 setDrivers(allUsers.filter(u => u.role === 'driver'));
             }
         }
@@ -41,6 +47,7 @@ export default function DeliverySummary() {
         fetchRecords();
     }, [summaryDate, currentUser, userRole, selectedDriver]);
 
+    // Fetch and filter daily records based on user role and selected driver.
     async function fetchRecords() {
         setLoading(true);
         try {
@@ -60,6 +67,7 @@ export default function DeliverySummary() {
 
                 q = query(recordsRef, ...constraints);
             } else {
+                if (!currentUser) return;
                 q = query(
                     recordsRef,
                     where("date", "==", summaryDate),
@@ -69,13 +77,13 @@ export default function DeliverySummary() {
             }
 
             const snapshot = await getDocs(q);
-            let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
 
             // Remove inbound supplier requests - these belong in the Inbound tab
             data = data.filter(r => r.status !== 'supplier_submitted' && r.status !== 'picked_up_supplier');
 
             // Sort in memory
-            data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
             setRecords(data);
         } catch (err) {
@@ -85,8 +93,9 @@ export default function DeliverySummary() {
     }
 
     // Delete Logic
-    const handleDelete = async (record) => {
+    const handleDelete = async (record: RecordItem) => {
         if (!window.confirm("Are you sure you want to PERMANENTLY DELETE this record?")) return;
+        if (!currentUser) return;
 
         try {
             // 1. Revert Load Status if deleting a Delivery
@@ -132,14 +141,15 @@ export default function DeliverySummary() {
             await logAction(currentUser, actionType, `Deleted ${record.type} record for ${record.recipient}`, record.id);
 
             fetchRecords();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert("Error deleting: " + err.message);
+            alert("Error deleting record: " + err.message);
         }
     };
 
 
     // --- EXPORT / IMPORT LOGIC ---
+    // Generates a CSV file from the current records for backup or external reporting.
     const handleExport = () => {
         if (!records || records.length === 0) {
             alert("No records to export.");
@@ -158,8 +168,8 @@ export default function DeliverySummary() {
         document.body.removeChild(link);
     };
 
-    const handleImport = async (e) => {
-        const file = e.target.files[0];
+    const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
 
         if (!window.confirm("WARNING: Importing data will OVERWRITE existing records with the same ID. Are you sure?")) {
@@ -169,7 +179,7 @@ export default function DeliverySummary() {
 
         const reader = new FileReader();
         reader.onload = async (evt) => {
-            const text = evt.target.result;
+            const text = evt.target?.result as string;
             try {
                 const parsedRecords = parseCSV(text);
                 if (parsedRecords.length === 0) {
@@ -179,7 +189,7 @@ export default function DeliverySummary() {
 
                 setLoading(true);
                 let count = 0;
-                for (const record of parsedRecords) {
+                for (const record of (parsedRecords as RecordItem[])) {
                     if (record.id) {
                         // Ensure we restore to the 'records' collection
                         // Convert empty strings for numbers if necessary, but string is usually safe for storage if app handles checks
@@ -190,11 +200,13 @@ export default function DeliverySummary() {
                     }
                 }
                 alert(`Successfully imported ${count} records.`);
-                await logAction(currentUser, ACTIONS.UPDATE, `Imported ${count} records from CSV`, null);
+                if (currentUser) {
+                    await logAction(currentUser, ACTIONS.UPDATE, `Imported ${count} records from CSV`, null);
+                }
                 fetchRecords(); // Refresh view
-            } catch (err) {
+            } catch (err: any) {
                 console.error(err);
-                alert("Error importing file: " + err.message);
+                alert("Error importing records: " + err.message);
             } finally {
                 setLoading(false);
                 e.target.value = ''; // Reset
@@ -213,7 +225,7 @@ export default function DeliverySummary() {
         doc.setFontSize(10);
         doc.text(subTitle, 14, 22);
 
-        const tableData = displayRecords.map((r, index) => {
+        const tableData = displayRecords.map((r) => {
             const time = new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             let typeString = r.type.toUpperCase();
             if (r.type === 'pickup' && (r.status === 'assigned' || r.status === 'assignment_complete')) typeString += ' (ASSIGNED)';
@@ -264,26 +276,8 @@ export default function DeliverySummary() {
         doc.save(`TVR_Report_${summaryDate}.pdf`);
     };
 
-    // --- LOAD Action for Driver in Summary ---
-    const handleLoadAction = async (load) => {
-        if (!window.confirm(`Confirm loading: ${load.recipient}?`)) return;
-        setLoading(true);
-        try {
-            await updateDoc(doc(db, "records", load.id), {
-                status: 'pending', // Transitions to 'Loaded' list (and 'Pending' execution)
-                loadedAt: new Date().toISOString()
-            });
-            await logAction(currentUser, ACTIONS.UPDATE, `Driver loaded items for ${load.recipient} (from Summary)`, load.id);
-            fetchRecords(); // Refresh
-        } catch (err) {
-            console.error(err);
-            alert("Error updating load: " + err.message);
-        }
-        setLoading(false);
-    };
-
-    // Edit Rules:
-    const canEdit = (record) => {
+    // --- Edit Rules: ---
+    const canEdit = (record: RecordItem) => {
         if (userRole === 'backoffice') return false;
         if (userRole === 'office') return true;
 
@@ -345,7 +339,7 @@ export default function DeliverySummary() {
             failedCount += Number(f.quantity || 0);
         });
 
-        const sumQty = (arr) => arr.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
+        const sumQty = (arr: RecordItem[]) => arr.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
 
         return {
             totalLoads: totalLoadsMetric,
@@ -397,7 +391,7 @@ export default function DeliverySummary() {
             }
         } else if (selectedFilter === 'pending') {
             // Show "Remaining to Deliver" (Loaded but not fully delivered)
-            return filtered.filter(r => r.type === 'load' && (r.status === 'pending' || r.status === 'incident_missing') && r.status !== 'assigned_load');
+            return filtered.filter(r => r.type === 'load' && (r.status === 'pending' || r.status === 'incident_missing'));
         } else if (selectedFilter === 'delivered') {
             return filtered.filter(r => r.type === 'delivery' || r.type === 'delivery_failed'); // Include failed in delivered history? Or separate? 
             // Usually delivered tab shows successes. Failed shows in 'Failed' metric, but maybe here too?
@@ -412,7 +406,7 @@ export default function DeliverySummary() {
     const displayRecords = getFilteredRecords();
 
     // Helper to get border color based on record type/status
-    const getStatusColor = (record) => {
+    const getStatusColor = (record: RecordItem) => {
         if (record.type === 'load') {
             if (record.status === 'assigned_load') return '#f59e0b'; // Orange for assigned
             return '#3b82f6'; // Blue for loaded/pending
@@ -676,7 +670,7 @@ export default function DeliverySummary() {
                                             {/*(DELIVERY FAILED)*/}
                                         </span>
                                     )}
-                                    {record.auditHistory?.length > 0 && <span title="Edited" style={{ fontSize: '1rem' }}>📝</span>}<span style={{ color: '#ef4444' }}>{record.failureReason || ''}</span>
+                                    {record.auditHistory && record.auditHistory.length > 0 && <span title="Edited" style={{ fontSize: '1rem' }}>📝</span>}<span style={{ color: '#ef4444' }}>{record.failureReason || ''}</span>
                                 </span>
                                 <h3 style={{ margin: '0.25rem 0' }}>{record.recipient}</h3>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>

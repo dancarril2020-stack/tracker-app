@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { db, collection, query, orderBy, limit, getDocs, where, addDoc, getUsersByTenant, getUsers } from '../firebase'; // Added imports
 import { useAuth } from '../contexts/AuthContext';
 import { generateAuditCSV, parseAuditCSV } from '../utils/csvHelper'; // Added helpers
@@ -7,14 +7,14 @@ export default function AuditTab() {
     const { tenantId } = useAuth();
     const isSuperAdmin = tenantId === 'admin';
 
-    const [logs, setLogs] = useState([]);
+    const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
     // Filters
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [selectedDriver, setSelectedDriver] = useState('all');
-    const [drivers, setDrivers] = useState([]);
+    const [drivers, setDrivers] = useState<any[]>([]);
 
     useEffect(() => {
         fetchDrivers();
@@ -28,7 +28,7 @@ export default function AuditTab() {
 
     const fetchDrivers = async () => {
         try {
-            const allUsers = isSuperAdmin ? await getUsers() : await getUsersByTenant(tenantId);
+            const allUsers = isSuperAdmin ? await getUsers() : await getUsersByTenant(tenantId || 'default');
             setDrivers(allUsers.filter(u => u.role === 'driver'));
         } catch (err) {
             console.error("Error fetching drivers:", err);
@@ -59,7 +59,7 @@ export default function AuditTab() {
             }
 
             const snapshot = await getDocs(q);
-            let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
             // 2. Normalize Timestamps for Sorting/Filtering
             // Old logs: ISO String, New logs: Number (ms)
@@ -112,13 +112,14 @@ export default function AuditTab() {
         a.click();
     };
 
-    const handleImport = (e) => {
+    const handleImport = (e: any) => {
         const file = e.target.files[0];
         if (!file) return;
 
         const reader = new FileReader();
         reader.onload = async (event) => {
-            const csvText = event.target.result;
+            if (!event.target?.result) return;
+            const csvText = event.target.result as string;
             const parsedLogs = parseAuditCSV(csvText);
 
             if (window.confirm(`Import ${parsedLogs.length} logs? This will add them to the database.`)) {
@@ -147,7 +148,7 @@ export default function AuditTab() {
         reader.readAsText(file);
     };
 
-    const getActionColor = (action) => {
+    const getActionColor = (action: any) => {
         if (action.includes('Delete')) return '#ef4444'; // Red
         if (action.includes('Edit') || action.includes('Update')) return '#f59e0b'; // Amber
         if (action.includes('Deliver')) return '#10b981'; // Green

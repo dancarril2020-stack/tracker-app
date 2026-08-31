@@ -1,3 +1,8 @@
+/**
+ * SupplierDashboard.tsx
+ * Purpose: Provides a dashboard for suppliers to create loading requests,
+ * manage their recipient/product catalogs, and track the status of their shipments.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import { RecordItem, Recipient, Product } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -59,6 +64,7 @@ export default function SupplierDashboard() {
     const [recipientListSearch, setRecipientListSearch] = useState('');
     const [productListSearch, setProductListSearch] = useState('');
 
+    // Fetch supplier requests and dynamically load recipients/products on component mount.
     useEffect(() => {
         if (!currentUser) return;
 
@@ -118,6 +124,7 @@ export default function SupplierDashboard() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Handle form submission to create a new request in Firestore.
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentUser) return;
@@ -579,6 +586,7 @@ export default function SupplierDashboard() {
                                     <th style={{ padding: '0.5rem' }}>Recipient</th>
                                     <th style={{ padding: '0.5rem' }}>Address</th>
                                     <th style={{ padding: '0.5rem' }}>Transport Client</th>
+                                    <th style={{ padding: '0.5rem' }}>Driver</th>
                                     <th style={{ padding: '0.5rem' }}>Qty</th>
                                     <th style={{ padding: '0.5rem' }}>Weight/Obs</th>
                                     <th style={{ padding: '0.5rem' }}>REEMB (€)</th>
@@ -589,11 +597,12 @@ export default function SupplierDashboard() {
                             <tbody>
                                 {paginatedRequests.map(req => (
                                     <tr key={req.id} data-record-id={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', opacity: req.status === 'supplier_cancelled' ? 0.6 : 1 }}>
-                                        <td style={{ padding: '0.5rem' }}>{new Date(req.createdAt).toLocaleDateString()}</td>
+                                        <td style={{ padding: '0.5rem' }}>{new Date(req.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
                                         <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{req.supplierReference}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.recipient}</td>
                                         <td style={{ padding: '0.5rem', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={req.address}>{req.address}</td>
                                         <td style={{ padding: '0.5rem', textTransform: 'uppercase' }}>{req.tenantId}</td>
+                                        <td style={{ padding: '0.5rem' }}>{req.driverName || '-'}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.quantity}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.volumen || '-'}</td>
                                         <td style={{ padding: '0.5rem' }}>{req.reembolso || '0'}</td>

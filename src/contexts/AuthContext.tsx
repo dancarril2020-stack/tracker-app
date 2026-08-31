@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+/**
+ * AuthContext.tsx
+ * Purpose: Provides authentication state (current user, role, tenantId) throughout the application.
+ * Manages login/logout, session timers, and enforces role-based access rules.
+ */
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
 import {
     auth,
@@ -9,7 +14,8 @@ import {
     createUserWithEmailAndPassword,
     doc,
     getDoc,
-    setDoc
+    setDoc,
+    sendPasswordResetEmail
 } from '../firebase';
 
 
@@ -29,11 +35,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [tenantId, setTenantId] = useState<string | null>(null); // Multi-tenant support
     const [loading, setLoading] = useState(true);
 
-    // Time Lock Configuration (Disabled for Testing)
-    const WORK_START_HOUR = 0;
-    const WORK_END_HOUR = 24;
-    const WORK_END_MINUTE = 59;
-
     function isWithinWorkHours() {
         return true; // Always allow access for testing
     }
@@ -44,6 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     function logout() {
         return signOut(auth);
+    }
+
+    /**
+     * Sends a password reset email to the specified address.
+     * Uses the default Firebase Auth email templates.
+     */
+    function resetPassword(email: string): Promise<void> {
+        return sendPasswordResetEmail(auth, email);
     }
 
     // Admin function to create users (Place in dedicated Admin context later or keep here if simple)
@@ -61,6 +70,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
     }
 
+    // Listen to Firebase Auth state changes.
+    // Fetches user role, tenantId, and enforces active status/time constraints.
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
@@ -126,9 +137,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser,
         userRole,
         tenantId,
+        loading,
         login,
         logout,
-        registerUser
+        registerUser,
+        resetPassword
     };
 
     return (

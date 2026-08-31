@@ -1,20 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, query, where, getDocs, updateDoc, doc, onSnapshot, getUsersByTenant } from '../firebase';
+import { useState, useEffect } from 'react';
+import { db, collection, query, where, updateDoc, doc, onSnapshot, getUsersByTenant } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
 
 export default function DebtsTab() {
     const { currentUser, userRole, tenantId } = useAuth();
-    const [debts, setDebts] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [drivers, setDrivers] = useState([]);
+    const [debts, setDebts] = useState<any[]>([]);
+    const [drivers, setDrivers] = useState<any[]>([]);
     const [selectedDriver, setSelectedDriver] = useState('all');
     const [selectedDate, setSelectedDate] = useState(''); // Default empty shows all
 
     // Fetch Drivers for Filter
     useEffect(() => {
         if (userRole === 'office' || userRole === 'backoffice') {
-            getUsersByTenant(tenantId).then(allUsers => {
+            getUsersByTenant(tenantId || 'default').then(allUsers => {
                 setDrivers(allUsers.filter(u => u.role === 'driver'));
             });
         }
@@ -22,7 +21,6 @@ export default function DebtsTab() {
 
     // Fetch Debts (Real-time)
     useEffect(() => {
-        setLoading(true);
         // Office sees ALL bets. Backoffice sees ALL. 
         // Drivers? Usually don't settle debts, but maybe want to see them?
         // Proposal: Drivers see THEIR debts. Office sees ALL.
@@ -41,28 +39,32 @@ export default function DebtsTab() {
                 constraints.push(where("date", "==", selectedDate));
             }
             q = query(debtsRef, ...constraints);
-        } else {
+        } else if (currentUser) {
             q = query(debtsRef,
                 where("driverId", "==", currentUser.uid),
                 where("tenantId", "==", tenantId || 'default')
             );
+        } else {
+            return;
         }
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // Sort: Pending first, then by Date desc
+            const list = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as any[];// Sort: Pending first, then by Date desc
             list.sort((a, b) => {
-                if (a.status === b.status) return new Date(b.createdAt) - new Date(a.createdAt);
+                if (a.status === b.status) return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
                 return a.status === 'pending' ? -1 : 1;
             });
             setDebts(list);
-            setLoading(false);
         });
 
         return () => unsubscribe();
     }, [currentUser, userRole, selectedDriver, selectedDate]);
 
-    const handleSettle = async (debt) => {
+    const handleSettle = async (debt: any) => {
+        if (!currentUser) return;
         if (userRole === 'driver') return; // Drivers cannot settle? Or maybe they can "Hand Over"? 
         // Office "Settles" means money is in safe.
 
@@ -75,7 +77,7 @@ export default function DebtsTab() {
                 paidBy: currentUser.email
             });
             await logAction(currentUser, ACTIONS.UPDATE, `Debt Settled: €${debt.amount} for ${debt.recipient}`, debt.id);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error settling debt:", err);
             alert("Error: " + err.message);
         }

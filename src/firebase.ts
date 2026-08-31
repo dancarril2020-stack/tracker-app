@@ -1,11 +1,18 @@
+/**
+ * firebase.ts
+ * Purpose: Initializes Firebase configuration, exports core Firebase services,
+ * and provides utility functions for user registration and management.
+ */
 import { initializeApp, deleteApp } from "firebase/app";
 import {
     getAuth,
     signInWithEmailAndPassword,
     signOut,
     onAuthStateChanged,
-    createUserWithEmailAndPassword
+    createUserWithEmailAndPassword,
+    sendPasswordResetEmail
 } from "firebase/auth";
+import { User } from './types';
 import {
     getFirestore,
     collection,
@@ -35,7 +42,8 @@ const firebaseConfig = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase
+// Initialize Firebase using environment variables.
+// These variables must be set in .env files (e.g. .env.development.local).
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
@@ -84,11 +92,11 @@ export const registerUser = async (email: string, password: string, role: string
 /**
  * Fetch all users from Firestore
  */
-export const getUsers = async () => {
+export const getUsers = async (): Promise<User[]> => {
     try {
         const q = query(collection(db, "users"));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+        return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
     } catch (error) {
         console.error("Error fetching users:", error);
         return [];
@@ -98,11 +106,11 @@ export const getUsers = async () => {
 /**
  * Fetch users belonging to a specific tenant
  */
-export const getUsersByTenant = async (tenantId: string) => {
+export const getUsersByTenant = async (tenantId: string): Promise<User[]> => {
     try {
         const q = query(collection(db, "users"), where("tenantId", "==", tenantId || 'default'));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+        return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
     } catch (error) {
         console.error("Error fetching users by tenant:", error);
         return [];
@@ -127,6 +135,7 @@ export {
     signOut,
     onAuthStateChanged,
     createUserWithEmailAndPassword,
+    sendPasswordResetEmail,
     collection,
     doc,
     getDoc,
