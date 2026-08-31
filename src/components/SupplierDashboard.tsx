@@ -18,7 +18,7 @@ export default function SupplierDashboard() {
     const [loading, setLoading] = useState(false);
     const [requests, setRequests] = useState<RecordItem[]>([]);
 
-    const [invoiceNum, setInvoiceNum] = useState<string>(() => `INV-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`);
+    const [invoiceNum, setInvoiceNum] = useState<string>(() => `ORD-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`);
 
     // Dynamic Data States
     const [recipientsList, setRecipientsList] = useState<Recipient[]>([]);
@@ -148,11 +148,11 @@ export default function SupplierDashboard() {
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
             });
-            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Supplier created request for ${formData.recipient} (Invoice: ${invoiceNum})`, newDoc.id);
+            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Supplier created request for ${formData.recipient} (Order: ${invoiceNum})`, newDoc.id);
             setFormData({ recipient: '', address: '', zipCode: '', phone: '', quantity: '', volumen: '', reembolso: '', observations: '', portes: 0, portesPaymentType: 'debidos', hasBankAccount: false });
             setRecipientSearch('');
             setProductSearch('');
-            setInvoiceNum(`INV-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`);
+            setInvoiceNum(`ORD-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`);
             alert("Request submitted successfully!");
         } catch (err) {
             console.error(err);
@@ -316,7 +316,7 @@ export default function SupplierDashboard() {
                                 <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{currentUser?.supplierCompanyName || currentUser?.name || currentUser?.email || 'N/A'}</div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Invoice Number:</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Order Number:</span>
                                 <div style={{ fontWeight: 'bold', color: 'var(--primary)', fontSize: '1.1rem' }}>{invoiceNum}</div>
                             </div>
                         </div>
@@ -581,8 +581,8 @@ export default function SupplierDashboard() {
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1000px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                    <th style={{ padding: '0.5rem' }}>Date & Time</th>
-                                    <th style={{ padding: '0.5rem' }}>Invoice No.</th>
+                                    <th style={{ padding: '0.5rem' }}>Date</th>
+                                    <th style={{ padding: '0.5rem' }}>Order No.</th>
                                     <th style={{ padding: '0.5rem' }}>Recipient</th>
                                     <th style={{ padding: '0.5rem' }}>Address</th>
                                     <th style={{ padding: '0.5rem' }}>Transport Client</th>
@@ -982,7 +982,7 @@ const PrintLabelsButton = ({ request, btnStyle }: { request: RecordItem, btnStyl
                     const safeAddress = request.address ? request.address.substring(0, 40) : 'N/A'; // Fit A6
                     doc.text(`Recipient: ${request.recipient}`, 10, 25);
                     doc.text(`Address: ${safeAddress}`, 10, 32);
-                    doc.text(`Ref/Invoice: ${request.supplierReference || 'N/A'}`, 10, 39);
+                    doc.text(`Ref/Order: ${request.supplierReference || 'N/A'}`, 10, 39);
                     doc.text(`Remittance: ${request.supplierName || request.remittance || 'N/A'}`, 10, 46);
                     doc.text(`Package: ${i + 1} of ${quantity}`, 10, 53);
                     doc.text(`Date: ${new Date(request.createdAt).toLocaleDateString()}`, 10, 60);

@@ -101,8 +101,7 @@ export default function InboundTab() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}>
                         <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                <th style={{ padding: '0.8rem' }}>Date & Time</th>
-                                <th style={{ padding: '0.8rem' }}>Invoice No.</th>
+
                                 <th style={{ padding: '0.8rem' }}>Supplier</th>
                                 <th style={{ padding: '0.8rem' }}>Recipient</th>
                                 <th style={{ padding: '0.8rem' }}>Location</th>
