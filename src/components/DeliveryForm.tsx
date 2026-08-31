@@ -92,7 +92,7 @@ export default function DeliveryForm() {
             const data = snapshot.docs ? snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) })) : [];
             // Sort by creation time (newest first)
             data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            console.log("DEBUG_FETCHED_LOADS", JSON.stringify(data.map(d => ({id: d.id, status: d.status, session: d.session, recipient: d.recipient, type: d.type, driverId: d.driverId}))));
+            console.log("DEBUG_FETCHED_LOADS", JSON.stringify(data.map(d => ({ id: d.id, status: d.status, session: d.session, recipient: d.recipient, type: d.type, driverId: d.driverId }))));
             setPendingLoads(data);
         } catch (err) {
             console.error("Error fetching pending loads:", err);
@@ -122,7 +122,7 @@ export default function DeliveryForm() {
 
     const confirmFailDelivery = async () => {
         if (!failingLoad || !currentUser) return;
-        
+
         if (!failureReason.trim()) {
             alert("Please provide a reason.");
             return;
@@ -201,14 +201,14 @@ export default function DeliveryForm() {
             if (load.status === 'picked_up_supplier') {
                 let nextStatus = 'in_warehouse';
                 let updates: any = { status: nextStatus };
-                
+
                 if (load.lastMileDriverId) {
-                     nextStatus = 'assigned_load';
-                     updates.status = nextStatus;
-                     updates.driverId = load.lastMileDriverId;
-                     updates.driverName = load.lastMileDriverName;
-                     updates.session = load.lastMileSession || 'afternoon';
-                     updates.type = 'load'; 
+                    nextStatus = 'assigned_load';
+                    updates.status = nextStatus;
+                    updates.driverId = load.lastMileDriverId;
+                    updates.driverName = load.lastMileDriverName;
+                    updates.session = load.lastMileSession || 'afternoon';
+                    updates.type = 'load';
                 }
 
                 await updateDoc(doc(db, "records", load.id), updates);
@@ -233,8 +233,8 @@ export default function DeliveryForm() {
 
             // 1. Create Delivery Record
             let targetId = (userRole === 'office' || userRole === 'backoffice') && selectedDriver ? selectedDriver : currentUser.uid;
-            let targetName = (userRole === 'office' || userRole === 'backoffice') && selectedDriver 
-                ? (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || 'Unknown') 
+            let targetName = (userRole === 'office' || userRole === 'backoffice') && selectedDriver
+                ? (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || 'Unknown')
                 : (currentUser.name || currentUser.email || 'Unknown');
 
             const deliveryRef = await addDoc(collection(db, "records"), {
@@ -420,8 +420,7 @@ export default function DeliveryForm() {
                         </select>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-                        <h2 style={{ flex: 1 }}>Deliveries</h2>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
 
                         <button
                             onClick={() => setIsScanning(true)}
@@ -729,7 +728,7 @@ export default function DeliveryForm() {
             )}
 
             {isScanning && (
-                <ScannerModal 
+                <ScannerModal
                     onScan={handleScan}
                     onClose={() => setIsScanning(false)}
                 />
