@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { RecordItem, User } from '../types';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant, onSnapshot } from '../firebase';
+import { supabase, getUsersByTenant } from '../supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
 import { logAction, ACTIONS } from '../utils/audit';
@@ -25,7 +25,6 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
     // Data State
     const [assignedLoads, setAssignedLoads] = useState<RecordItem[]>([]);
     const [loadedLoads, setLoadedLoads] = useState<RecordItem[]>([]);
-    // const [allDailyRecords, setAllDailyRecords] = useState<RecordItem[]>([]); // For Metric Stability
 
     // Form State (for creating assignments)
     const [drivers, setDrivers] = useState<User[]>([]);
@@ -46,10 +45,10 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
                 const allUsers = await getUsersByTenant(tenantId || 'default');
                 const driverList = allUsers.filter(u => u.role === 'driver' && u.active !== false);
                 setDrivers(driverList);
-                if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
+                if (driverList.length > 0) setSelectedDriver(driverList[0].uid || driverList[0].id);
             } else {
                 if (currentUser) {
-                    setSelectedDriver(currentUser.uid);
+                    setSelectedDriver(currentUser.uid || currentUser.id);
                 }
             }
         }
@@ -57,42 +56,43 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
     }, [userRole, currentUser]);
 
     // --- 2. FETCH LOADS (Real-time) ---
-    // Subscribes to Firestore to fetch assigned and active loads for the targeted driver.
     useEffect(() => {
         const today = new Date().toISOString().split('T')[0];
-        const recordsRef = collection(db, "records");
-
-        const targetDriverId = (userRole === 'office' || userRole === 'backoffice') ? selectedDriver : (currentUser ? currentUser.uid : null);
+        const targetDriverId = (userRole === 'office' || userRole === 'backoffice') ? selectedDriver : (currentUser ? (currentUser.uid || currentUser.id) : null);
 
         if (!targetDriverId) return;
 
-        // Fetch loads AND deliveries to keep the metric stable after delivery
-        const q = query(
-            recordsRef,
-            where("driverId", "==", targetDriverId),
-            where("date", "==", today),
-            where("type", "in", ["load", "delivery", "delivery_failed"]),
-            where("tenantId", "==", tenantId || 'default')
-        );
+        const fetchLoads = async () => {
+            const { data, error } = await supabase.from('records')
+                .select('*')
+                .eq('driverId', targetDriverId)
+                .eq('date', today)
+                .in('type', ['load', 'delivery', 'delivery_failed'])
+                .eq('tenantId', tenantId || 'default');
+            
+            if (error) {
+                console.error("Error fetching loads", error);
+                return;
+            }
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const allRecords = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
-
-            // 1. Assigned (Waiting)
+            const allRecords = (data || []).map(d => ({ ...d } as RecordItem));
             const assigned = allRecords.filter(l => l.type === 'load' && l.status === 'assigned_load');
-
-            // 2. Active Loaded (Pending / On Truck)
             const matchedLoaded = allRecords.filter(l =>
                 l.type === 'load' && (l.status === 'pending' || l.status === 'incident_missing' || l.status === 'incident_excess')
             );
-
+            
             setAssignedLoads(assigned);
             setLoadedLoads(matchedLoaded);
-            // setAllDailyRecords(allRecords);
-            console.log(`[DEBUG] LoadingTab: Found ${assigned.length} assigned loads for driver ${targetDriverId}`);
-        });
+        };
 
-        return () => unsubscribe();
+        fetchLoads();
+
+        const channel = supabase.channel('loading-tab-updates')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'records', filter: `driverId=eq.${targetDriverId}` }, () => {
+                fetchLoads();
+            }).subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, [selectedDriver, currentUser, userRole, tenantId]);
 
     // --- 3. ACTIONS ---
@@ -124,51 +124,52 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
         setLoading(true);
         try {
             const today = new Date().toISOString().split('T')[0];
-            const recordsRef = collection(db, "records");
 
-            const q = query(
-                recordsRef,
-                where("driverId", "==", targetDriverId),
-                where("date", "==", today),
-                where("type", "==", "load"),
-                where("recipient", "==", formData.recipient),
-                where("remittance", "==", formData.remittance),
-                where("status", "==", statusToFind),
-                where("tenantId", "==", tenantId || 'default')
-            );
+            const { data: existingRecords, error: fetchError } = await supabase.from('records')
+                .select('*')
+                .eq('driverId', targetDriverId)
+                .eq('date', today)
+                .eq('type', 'load')
+                .eq('recipient', formData.recipient)
+                .eq('remittance', formData.remittance)
+                .eq('status', statusToFind)
+                .eq('tenantId', tenantId || 'default');
 
-            const querySnapshot = await getDocs(q);
+            if (fetchError) throw fetchError;
 
-            if (!querySnapshot.empty) {
-                const existingDoc = querySnapshot.docs[0];
-                const existingData = existingDoc.data();
-                const newQuantity = Number(existingData.quantity || 0) + Number(formData.quantity || 0);
+            if (existingRecords && existingRecords.length > 0) {
+                const existingDoc = existingRecords[0];
+                const newQuantity = Number(existingDoc.quantity || 0) + Number(formData.quantity || 0);
 
-                await updateDoc(doc(db, "records", existingDoc.id), {
+                const { error: updateError } = await supabase.from('records').update({
                     quantity: newQuantity,
-                    volumen: formData.volumen ? `${existingData.volumen || ''} + ${formData.volumen}` : existingData.volumen,
-                    reembolso: formData.reembolso || existingData.reembolso // Update if provided
-                });
+                    volumen: formData.volumen ? `${existingDoc.volumen || ''} + ${formData.volumen}` : existingDoc.volumen,
+                    reembolso: formData.reembolso || existingDoc.reembolso
+                }).eq('id', existingDoc.id);
+
+                if (updateError) throw updateError;
 
                 await logAction(
                     currentUser,
                     ACTIONS.UPDATE,
-                    `Updated existing load for ${formData.recipient} (Qty: ${existingData.quantity || 0} → ${newQuantity})`,
+                    `Updated existing load for ${formData.recipient} (Qty: ${existingDoc.quantity || 0} → ${newQuantity})`,
                     existingDoc.id
                 );
             } else {
-                const newDoc = await addDoc(collection(db, "records"), {
+                const { data: newDoc, error: insertError } = await supabase.from('records').insert({
                     type: 'load',
                     driverId: targetDriverId,
                     driverName: targetDriverName,
                     ...formData,
-                    session: activeSession, // Save the active session
+                    session: activeSession,
                     status: statusToFind,
                     tenantId: tenantId || 'default',
                     createdAt: new Date().toISOString(),
                     date: today,
                     assignedByName: (userRole === 'office' || userRole === 'backoffice') ? (currentUser.name || currentUser.email) : null
-                });
+                }).select('id').single();
+
+                if (insertError) throw insertError;
 
                 await logAction(currentUser, ACTIONS.LOAD_ITEM, `Registered load for ${formData.recipient} (${formData.quantity} units)`, newDoc.id);
             }
@@ -186,10 +187,12 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
         if (!currentUser) return;
         setLoading(true);
         try {
-            await updateDoc(doc(db, "records", load.id), {
+            const { error: updateError } = await supabase.from('records').update({
                 status: 'pending',
                 loadedAt: new Date().toISOString()
-            });
+            }).eq('id', load.id);
+            if (updateError) throw updateError;
+
             await logAction(currentUser, ACTIONS.UPDATE, `Driver loaded items for ${load.recipient}`, load.id);
         } catch (err: any) {
             console.error(err);
@@ -206,14 +209,11 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
         }
 
         try {
-            const recordRef = doc(db, 'records', payload.id);
-            const recordSnap = await getDoc(recordRef);
-            if (!recordSnap.exists()) {
+            const { data: record, error: fetchError } = await supabase.from('records').select('*').eq('id', payload.id).single();
+            if (fetchError || !record) {
                 alert("Package record not found.");
                 return;
             }
-
-            const record = recordSnap.data();
             
             // Helpful error if they are trying to load it directly
             if (record.status === 'supplier_submitted') {
@@ -228,15 +228,16 @@ export default function LoadingTab({ onCompleteLoad }: { onCompleteLoad: () => v
             }
 
             // Verify driver
-            if (!currentUser || record.driverId !== currentUser.uid) {
+            if (!currentUser || record.driverId !== (currentUser.uid || currentUser.id)) {
                 alert("This package is assigned to another driver.");
                 return;
             }
 
-            await updateDoc(recordRef, {
+            const { error: updateError } = await supabase.from('records').update({
                 status: 'pending',
                 loadedAt: new Date().toISOString()
-            });
+            }).eq('id', payload.id);
+            if (updateError) throw updateError;
 
             await logAction(currentUser, ACTIONS.UPDATE, `QR Scanned: Driver loaded items for ${record.recipient}`, payload.id);
             alert(`Carga confirmada para ${record.recipient}`);

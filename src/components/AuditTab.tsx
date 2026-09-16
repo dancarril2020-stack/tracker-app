@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { db, collection, query, orderBy, limit, getDocs, where, addDoc, getUsersByTenant, getUsers } from '../firebase'; // Added imports
+import { supabase, getUsersByTenant, getUsers } from '../supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { generateAuditCSV, parseAuditCSV } from '../utils/csvHelper'; // Added helpers
+import { generateAuditCSV, parseAuditCSV } from '../utils/csvHelper';
 
 export default function AuditTab() {
     const { tenantId } = useAuth();
@@ -38,61 +38,40 @@ export default function AuditTab() {
     const fetchLogs = async () => {
         setLoading(true);
         try {
-            let q;
-            const auditRef = collection(db, 'audit_logs');
+            let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(1000);
 
-            // 1. Basic Server Side Query (Security first)
-            if (!isSuperAdmin) {
-                // Regular users only see their tenant logs. 
-                // NOTE: Combining where() and orderBy() requires a manual COMPOSITE INDEX in Firestore.
-                // To avoid requiring manual setup, we fetch a large batch and sort client-side.
-                q = query(auditRef,
-                    where('tenantId', '==', tenantId),
-                    limit(1000)
-                );
-            } else {
-                // Super Admin sees everything. Single field orderBy works without manual index.
-                q = query(auditRef,
-                    orderBy('timestamp', 'desc'),
-                    limit(1000)
-                );
-            }
+            // In Supabase, the RLS policies automatically filter by tenant (if set correctly).
+            // But we can explicitly query for safety if needed.
+            // Note: our audit_logs schema stores extra data in the `details` JSONB column.
 
-            const snapshot = await getDocs(q);
-            let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+            const { data, error } = await query;
+            if (error) throw error;
 
-            // 2. Normalize Timestamps for Sorting/Filtering
-            // Old logs: ISO String, New logs: Number (ms)
-            data = data.map(log => {
-                let ts = log.timestamp;
-                if (typeof ts === 'string') {
-                    ts = new Date(ts).getTime();
-                }
-                return { ...log, normalizedTimestamp: ts || 0 };
+            let logData = data.map(log => {
+                const ts = new Date(log.created_at).getTime();
+                // Merge JSONB details with the root object for backward compatibility with the frontend UI
+                return { id: log.id, action: log.action, userId: log.userId, timestamp: ts, ...log.details };
             });
 
             // 3. Client-Side Filters
             // Date Filter
             if (startDate) {
                 const startTs = new Date(startDate).getTime();
-                data = data.filter(log => log.normalizedTimestamp >= startTs);
+                logData = logData.filter(log => log.timestamp >= startTs);
             }
             if (endDate) {
                 const endTs = new Date(endDate);
                 endTs.setHours(23, 59, 59, 999);
-                data = data.filter(log => log.normalizedTimestamp <= endTs.getTime());
+                logData = logData.filter(log => log.timestamp <= endTs.getTime());
             }
 
             // Driver Filter
             if (selectedDriver !== 'all') {
-                data = data.filter(log => log.userId === selectedDriver);
+                logData = logData.filter(log => log.userId === selectedDriver);
             }
 
-            // 4. Sort Descending
-            data.sort((a, b) => b.normalizedTimestamp - a.normalizedTimestamp);
-
             // 5. Final Display Limit
-            setLogs(data.slice(0, 200));
+            setLogs(logData.slice(0, 200));
 
         } catch (error) {
             console.error("CRITICAL ERROR FETCHING LOGS:", error);
@@ -129,11 +108,14 @@ export default function AuditTab() {
                     for (const log of parsedLogs) {
                         const { id, ...logData } = log;
                         const newLog = {
-                            ...logData,
-                            timestamp: Number(logData.timestamp) || Date.now(),
-                            tenantId: isSuperAdmin ? (logData.tenantId || 'admin') : tenantId
+                            action: logData.action,
+                            userId: logData.userId,
+                            details: {
+                                ...logData,
+                                tenantId: isSuperAdmin ? (logData.tenantId || 'admin') : tenantId
+                            }
                         };
-                        await addDoc(collection(db, 'audit_logs'), newLog);
+                        await supabase.from('audit_logs').insert(newLog);
                         count++;
                     }
                     alert(`Successfully imported ${count} logs.`);
@@ -149,6 +131,7 @@ export default function AuditTab() {
     };
 
     const getActionColor = (action: any) => {
+        if (!action) return 'var(--primary)';
         if (action.includes('Delete')) return '#ef4444'; // Red
         if (action.includes('Edit') || action.includes('Update')) return '#f59e0b'; // Amber
         if (action.includes('Deliver')) return '#10b981'; // Green
@@ -258,7 +241,7 @@ export default function AuditTab() {
                                             </span>
                                         </td>
                                         <td style={{ padding: '0.8rem 1rem', whiteSpace: 'pre-wrap', verticalAlign: 'top', lineHeight: '1.4' }}>
-                                            {log.details}
+                                            {log.message || log.details}
                                             {log.recordId && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>ID: {log.recordId}</div>}
                                         </td>
                                     </tr>

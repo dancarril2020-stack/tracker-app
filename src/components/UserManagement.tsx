@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { registerUser, getUsers, getUsersByTenant, updateUserStatus } from '../firebase';
+import { registerUser, getUsers, getUsersByTenant, updateUserStatus } from '../supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
 

@@ -4,7 +4,7 @@
  * and process those pickups (including manual pickup entry and QR scanning).
  */
 import React, { useState, useEffect } from 'react';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getDoc, getUsersByTenant } from '../firebase';
+import { supabase, getUsersByTenant } from '../supabase';
 import { RecordItem, User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentSession } from '../utils/sessionHelper';
@@ -57,7 +57,7 @@ export default function PickupTab() {
         const allUsers = await getUsersByTenant(tenantId || 'default');
         const driverList = allUsers.filter(u => u.role === 'driver' && u.active !== false);
         setDrivers(driverList);
-        if (driverList.length > 0) setSelectedDriver(driverList[0].uid);
+        if (driverList.length > 0) setSelectedDriver(driverList[0].uid || driverList[0].id);
     };
 
     // Fetch pending pickup assignments for the driver.
@@ -65,18 +65,16 @@ export default function PickupTab() {
         if (!currentUser) return;
         setLoading(true);
         try {
-            const q = query(
-                collection(db, "records"),
-                where("driverId", "==", currentUser.uid),
-                where("type", "==", "pickup"),
-                where("status", "==", "assigned"), // Fetch only pending assignments
-                where("tenantId", "==", tenantId || 'default')
-            );
-            const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
-            // Sort by creation (oldest first or newest first)
-            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            setAssignedPickups(data);
+            const { data, error } = await supabase.from('records')
+                .select('*')
+                .eq('driverId', currentUser.uid || currentUser.id)
+                .eq('type', 'pickup')
+                .eq('status', 'assigned')
+                .eq('tenantId', tenantId || 'default')
+                .order('createdAt', { ascending: false });
+
+            if (error) throw error;
+            setAssignedPickups((data || []).map(d => ({ ...d } as RecordItem)));
         } catch (err) {
             console.error("Error fetching assignments:", err);
         }
@@ -95,8 +93,8 @@ export default function PickupTab() {
         if (!currentUser) return;
         setLoading(true);
         try {
-            const driverObj = drivers.find(d => d.uid === selectedDriver);
-            const assignRef = await addDoc(collection(db, "records"), {
+            const driverObj = drivers.find(d => (d.uid === selectedDriver || d.id === selectedDriver));
+            const { data: newDoc, error } = await supabase.from('records').insert({
                 type: 'pickup',
                 status: 'assigned',
                 driverId: selectedDriver,
@@ -108,8 +106,11 @@ export default function PickupTab() {
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0],
                 assignedByName: currentUser.name || currentUser.email
-            });
-            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Assigned Pickup to ${driverObj?.name || driverObj?.email || 'Unknown'} for ${assignData.recipient}`, assignRef.id);
+            }).select('id').single();
+            
+            if (error) throw error;
+
+            await logAction(currentUser, ACTIONS.CREATE_ITEM, `Assigned Pickup to ${driverObj?.name || driverObj?.email || 'Unknown'} for ${assignData.recipient}`, newDoc.id);
             alert("Pickup Assigned Successfully!");
             setAssignData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '', session: '' });
         } catch (err: any) {
@@ -136,23 +137,23 @@ export default function PickupTab() {
         setLoading(true);
         try {
             const today = new Date().toISOString().split('T')[0];
-            const recordRef = doc(db, "records", pickup.id);
 
             const currentHour = new Date().getHours();
             const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
 
             // 1. Update the original assignment record to picked up and route to delivery session
-            await updateDoc(recordRef, {
+            const { error: updateError } = await supabase.from('records').update({
                 status: 'picked_up_supplier',
                 session: sessionToAssign,
-                driverId: currentUser.uid,
+                driverId: currentUser.uid || currentUser.id,
                 driverName: currentUser.name || currentUser.email,
                 collectedValue: collectedValue || '0',
                 reembolso: collectedValue || pickup.reembolso || '',
                 expectedReembolso: pickup.reembolso || '',
                 completedAt: new Date().toISOString(),
                 date: today
-            });
+            }).eq('id', pickup.id);
+            if (updateError) throw updateError;
 
             // 3. Check for Debt (Shortfall)
             const expectedVal = parseFloat((pickup.reembolso || "0").toString().replace(',', '.'));
@@ -161,19 +162,21 @@ export default function PickupTab() {
             if (!isNaN(expectedVal) && expectedVal > 0) {
                 const shortfall = expectedVal - (isNaN(collectedVal) ? 0 : collectedVal);
                 if (shortfall > 0.05) {
-                    await addDoc(collection(db, "debts"), {
+                    const { error: debtError } = await supabase.from('debts').insert({
                         recipient: pickup.recipient,
                         remittance: pickup.remittance,
                         amount: shortfall.toFixed(2),
                         originalLoadId: pickup.id,
                         deliveryId: pickup.id, // Linking to the original pickup
-                        driverId: currentUser.uid,
+                        driverId: currentUser.uid || currentUser.id,
                         driverName: currentUser.name || currentUser.email,
                         date: today,
                         createdAt: new Date().toISOString(),
                         tenantId: tenantId || 'default',
                         status: 'pending'
                     });
+                    if (debtError) throw debtError;
+                    
                     await logAction(currentUser, ACTIONS.UPDATE, `Debt Created (Pickup): €${shortfall.toFixed(2)} for ${pickup.recipient}`, pickup.id);
                 }
             }
@@ -197,15 +200,12 @@ export default function PickupTab() {
         }
 
         try {
-            const recordRef = doc(db, 'records', payload.id);
-            const recordSnap = await getDoc(recordRef);
-            if (!recordSnap.exists()) {
+            const { data: record, error: fetchError } = await supabase.from('records').select('*').eq('id', payload.id).single();
+            if (fetchError || !record) {
                 alert("Package record not found.");
                 return;
             }
 
-            const record = recordSnap.data();
-            
             if (!['supplier_submitted', 'assigned', 'assigned_supplier_pickup'].includes(record.status)) {
                 alert(`Cannot scan for pickup. Status is already: ${record.status}`);
                 return;
@@ -218,7 +218,7 @@ export default function PickupTab() {
 
             let updates: any = {
                 scannedAtPickup: scannedArr,
-                driverId: currentUser.uid,
+                driverId: currentUser.uid || currentUser.id,
                 driverName: currentUser.name || currentUser.email
             };
 
@@ -226,14 +226,13 @@ export default function PickupTab() {
             const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
 
             const total = Number(record.quantity) || 1;
-            console.log("DEBUG_SCAN: pkg=", payload.pkg, "scannedArr=", scannedArr, "total=", total);
             if (scannedArr.length >= total) {
-                // All parts scanned, or it's just 1 part
                 updates.status = 'picked_up_supplier';
                 updates.session = sessionToAssign;
             }
 
-            await updateDoc(recordRef, updates);
+            const { error: updateError } = await supabase.from('records').update(updates).eq('id', payload.id);
+            if (updateError) throw updateError;
 
             if (scannedArr.length >= total) {
                 await logAction(currentUser, ACTIONS.PICKUP_ITEM, `QR Scanned: Full pickup from ${record.recipient}`, payload.id);
@@ -264,10 +263,10 @@ export default function PickupTab() {
             const currentHour = new Date().getHours();
             const sessionToAssign = currentHour < 13 ? 'recogida_manana' : 'recogida_tarde';
 
-            const pickupRef = await addDoc(collection(db, "records"), {
+            const { data: newPickup, error } = await supabase.from('records').insert({
                 type: 'pickup',
                 status: 'picked_up_supplier',
-                driverId: currentUser.uid,
+                driverId: currentUser.uid || currentUser.id,
                 driverName: currentUser.name || currentUser.email,
                 ...manualData,
                 session: sessionToAssign,
@@ -276,8 +275,10 @@ export default function PickupTab() {
                 expectedReembolso: manualData.reembolso || '',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
-            });
-            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Manual Pickup registered from ${manualData.recipient}`, pickupRef.id);
+            }).select('id').single();
+            if (error) throw error;
+            
+            await logAction(currentUser, ACTIONS.PICKUP_ITEM, `Manual Pickup registered from ${manualData.recipient}`, newPickup.id);
             alert("Manual Pickup Registered!");
             setManualData({ recipient: '', remittance: '', quantity: '', volumen: '', portes: 'paid', reembolso: '', address: '' });
             setViewMode('list');

@@ -1,4 +1,4 @@
-import { db, collection, addDoc } from '../firebase';
+import { supabase } from '../supabase';
 
 export const ACTIONS = {
     LOAD_ITEM: 'Load Item',
@@ -14,10 +14,9 @@ export const ACTIONS = {
     LOGIN: 'Login' // Optional, but good for tracking
 };
 
-
 /**
- * Logs a user action to the 'audit_logs' collection.
- * @param {User | null} currentUser - The user object from AuthContext
+ * Logs a user action to the 'audit_logs' table.
+ * @param {any | null} currentUser - The user object from AuthContext
  * @param {string} action - One of the ACTIONS constants
  * @param {string} details - Human readable details
  * @param {string|null} recordId - ID of the record being acted upon
@@ -27,20 +26,21 @@ export async function logAction(currentUser: any, action: string, details: strin
     try {
         if (!currentUser) return; // Should not happen in auth'd app
 
-        await addDoc(collection(db, 'audit_logs'), {
-            timestamp: Date.now(), // Store as number for easier range queries
-            userId: currentUser.uid,
-            userEmail: currentUser.email,
-            userName: currentUser.name || currentUser.email,
-            userRole: currentUser.role || 'unknown',
-            tenantId: currentUser.tenantId || 'default', // Critical for isolation
+        // We use the new schema structure which requires 'action', 'userId', and 'details' (jsonb)
+        await supabase.from('audit_logs').insert({
             action,
-            details,
-            recordId,
-            metadata, // Optional extra data
+            userId: currentUser.id || currentUser.uid, // Handle both Supabase user.id and legacy uid just in case
+            details: {
+                message: details,
+                recordId,
+                metadata,
+                userEmail: currentUser.email,
+                userName: currentUser.name || currentUser.email,
+                userRole: currentUser.role || 'unknown',
+                tenantId: currentUser.tenantId || 'default'
+            }
         });
     } catch (error) {
         console.error("Failed to log action:", error);
-        // We do typically NOT want to block the user if logging fails, so we just log to console.
     }
 }

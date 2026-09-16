@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db, collection, query, where, onSnapshot, doc, updateDoc, getUsersByTenant } from '../firebase';
+import { supabase, getUsersByTenant } from '../supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { logAction, ACTIONS } from '../utils/audit';
 
@@ -18,21 +18,36 @@ export default function InboundTab() {
         getUsersByTenant(tenantId || 'default').then(users => {
             const drv = users.filter(u => u.role === 'driver');
             setDrivers(drv);
-            if (drv.length > 0) setSelectedDriver(drv[0].uid);
+            if (drv.length > 0) setSelectedDriver(drv[0].uid || drv[0].id);
         });
 
-        const q = query(collection(db, "records"), where("tenantId", "==", tenantId || 'default'));
+        const fetchRecords = async () => {
+            const { data, error } = await supabase.from('records')
+                .select('*')
+                .eq('tenantId', tenantId || 'default')
+                .in('status', ['supplier_submitted', 'picked_up_supplier', 'in_warehouse'])
+                .order('createdAt', { ascending: false });
 
-        const unsub = onSnapshot(q, snap => {
-            const data = snap.docs
-                .map(d => ({ id: d.id, ...d.data() } as any))
-                .filter(d => ['supplier_submitted', 'picked_up_supplier', 'in_warehouse'].includes(d.status));
-            
-            data.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-            setRecords(data);
-        });
+            if (error) {
+                console.error("Error fetching inbound records:", error);
+                return;
+            }
+            setRecords(data || []);
+        };
 
-        return () => unsub();
+        fetchRecords();
+
+        const channel = supabase.channel('inbound_updates')
+            .on(
+                'postgres_changes', 
+                { event: '*', schema: 'public', table: 'records', filter: `tenantId=eq.${tenantId || 'default'}` }, 
+                () => {
+                    fetchRecords();
+                }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, [tenantId]);
 
     const handleOpenAssign = (rec: any) => {
@@ -43,19 +58,12 @@ export default function InboundTab() {
     const handleAssignSubmit = async () => {
         if (!selectedDriver) return alert("Select a driver");
         setLoading(true);
-        const driverName = drivers.find(d => d.uid === selectedDriver)?.name || 'Unknown Driver';
+        const driverName = drivers.find(d => (d.uid === selectedDriver || d.id === selectedDriver))?.name || 'Unknown Driver';
 
         try {
-            const recordRef = doc(db, 'records', selectedRecord.id);
-            
-            // The office is assigning the LAST MILE driver.
-            // If the item is already in_warehouse, we can directly assign it as a load.
-            // If it is NOT in_warehouse yet (i.e. picked_up_supplier or supplier_submitted),
-            // we save the lastMileDriverId so the driver can automatically assign it when they unload it.
-            
             if (selectedRecord.status === 'in_warehouse') {
                 const today = new Date().toISOString().split('T')[0];
-                await updateDoc(recordRef, {
+                const { error } = await supabase.from('records').update({
                     status: 'assigned_load', 
                     type: 'load',
                     driverId: selectedDriver,
@@ -63,14 +71,16 @@ export default function InboundTab() {
                     assignedByName: currentUser?.name || currentUser?.email,
                     date: today,
                     session: selectedSession
-                });
+                }).eq('id', selectedRecord.id);
+                if (error) throw error;
                 await logAction(currentUser, ACTIONS.UPDATE, `Assigned Route Delivery for ${selectedRecord.recipient} to ${driverName}`, selectedRecord.id);
             } else {
-                await updateDoc(recordRef, {
+                const { error } = await supabase.from('records').update({
                     lastMileDriverId: selectedDriver,
                     lastMileDriverName: driverName,
                     lastMileSession: selectedSession
-                });
+                }).eq('id', selectedRecord.id);
+                if (error) throw error;
                 await logAction(currentUser, ACTIONS.UPDATE, `Pre-assigned Route Delivery for ${selectedRecord.recipient} to ${driverName}`, selectedRecord.id);
             }
             

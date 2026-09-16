@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RecordItem, Recipient, Product } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { db, collection, addDoc, query, where, doc, updateDoc, deleteDoc, onSnapshot, getDocs } from '../firebase';
+import { supabase } from '../supabase';
 import { logAction, ACTIONS } from '../utils/audit';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
@@ -67,41 +67,44 @@ export default function SupplierDashboard() {
     // Fetch supplier requests and dynamically load recipients/products on component mount.
     useEffect(() => {
         if (!currentUser) return;
+        
+        const userId = currentUser.uid || currentUser.id;
+        
+        const fetchRequests = async () => {
+            const { data, error } = await supabase.from('records').select('*').eq('supplierId', userId).order('createdAt', { ascending: false });
+            if (error) {
+                console.error("Error fetching supplier requests:", error);
+            } else {
+                setRequests((data || []).map(d => ({ ...d } as RecordItem)));
+            }
+        };
+        fetchRequests();
 
-        const q = query(
-            collection(db, "records"),
-            where("supplierId", "==", currentUser.uid)
-        );
-
-        const unsub = onSnapshot(q, (snap) => {
-            let data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as RecordItem));
-            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            setRequests(data);
-        }, (error) => {
-            console.error("Error fetching supplier requests:", error);
-        });
+        // Realtime Subscription
+        const channel = supabase.channel('supplier_records')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'records', filter: `supplierId=eq.${userId}` },
+                () => {
+                    fetchRequests();
+                }
+            )
+            .subscribe();
 
         // Fetch dynamic data
         const fetchDynamicData = async () => {
             try {
-                const recQ = query(collection(db, "recipients"), where("supplierId", "==", currentUser.uid));
-                const recSnapshot = await getDocs(recQ);
-                const recList: Recipient[] = [];
-                recSnapshot.forEach(doc => recList.push({ id: doc.id, ...doc.data() } as Recipient));
-                setRecipientsList(recList);
+                const { data: recData } = await supabase.from('recipients').select('*').eq('supplierId', userId);
+                setRecipientsList((recData || []).map(d => ({ ...d } as Recipient)));
 
-                const prodQ = query(collection(db, "products"), where("supplierId", "==", currentUser.uid));
-                const prodSnapshot = await getDocs(prodQ);
-                const prodList: Product[] = [];
-                prodSnapshot.forEach(doc => prodList.push({ id: doc.id, ...doc.data() } as Product));
-                setProductsList(prodList);
+                const { data: prodData } = await supabase.from('products').select('*').eq('supplierId', userId);
+                setProductsList((prodData || []).map(d => ({ ...d } as Product)));
 
-                const zipSnapshot = await getDocs(collection(db, "zip_portes"));
+                const { data: zipData } = await supabase.from('zip_portes').select('*');
                 const zipMap: Record<string, number> = {};
-                zipSnapshot.forEach(doc => {
-                    const data = doc.data();
-                    if (data.zipCode && data.price !== undefined) {
-                        zipMap[data.zipCode] = Number(data.price);
+                (zipData || []).forEach(d => {
+                    if (d.zipCode && d.price !== undefined) {
+                        zipMap[d.zipCode] = Number(d.price);
                     }
                 });
                 setZipPortesMap(zipMap);
@@ -111,7 +114,7 @@ export default function SupplierDashboard() {
         };
         fetchDynamicData();
 
-        return () => unsub();
+        return () => { supabase.removeChannel(channel); };
     }, [currentUser, tenantId]);
 
     // Reset pagination when filters change
@@ -124,7 +127,6 @@ export default function SupplierDashboard() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    // Handle form submission to create a new request in Firestore.
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentUser) return;
@@ -133,10 +135,10 @@ export default function SupplierDashboard() {
             const supplierName = (currentUser.supplierCompanyName || currentUser.name || currentUser.email || 'Unknown Supplier').toUpperCase();
             const targetTenant = tenantId || 'default';
 
-            const newDoc = await addDoc(collection(db, "records"), {
+            const { data: newDoc, error: insertError } = await supabase.from('records').insert({
                 type: 'pickup',
                 status: 'supplier_submitted',
-                supplierId: currentUser.uid,
+                supplierId: currentUser.uid || currentUser.id,
                 supplierName: supplierName,
                 ...formData,
                 targetTenant: targetTenant.toUpperCase(),
@@ -147,7 +149,9 @@ export default function SupplierDashboard() {
                 scannedAtLoad: [],
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
-            });
+            }).select('id').single();
+            if (insertError) throw insertError;
+
             await logAction(currentUser, ACTIONS.CREATE_ITEM, `Supplier created request for ${formData.recipient} (Order: ${invoiceNum})`, newDoc.id);
             setFormData({ recipient: '', address: '', zipCode: '', phone: '', quantity: '', volumen: '', reembolso: '', observations: '', portes: 0, portesPaymentType: 'debidos', hasBankAccount: false });
             setRecipientSearch('');
@@ -164,7 +168,8 @@ export default function SupplierDashboard() {
     const handleCancel = async (id: string) => {
         if (!window.confirm("Are you sure you want to cancel this request?")) return;
         try {
-            await updateDoc(doc(db, "records", id), { status: 'supplier_cancelled' });
+            const { error } = await supabase.from('records').update({ status: 'supplier_cancelled' }).eq('id', id);
+            if (error) throw error;
             await logAction(currentUser, ACTIONS.EDIT_LOAD, `Supplier cancelled request`, id);
         } catch (err) {
             console.error("Failed to cancel", err);
@@ -180,15 +185,15 @@ export default function SupplierDashboard() {
             return;
         }
         try {
-            await addDoc(collection(db, 'recipients'), { ...recipientForm, supplierId: currentUser.uid });
+            const userId = currentUser.uid || currentUser.id;
+            const { error } = await supabase.from('recipients').insert({ ...recipientForm, supplierId: userId });
+            if (error) throw error;
+
             setRecipientForm({ name: '', address: '', zipCode: '', phone: '', hasBankAccount: false });
             setShowAddRecipient(false);
-            // Refresh the list used by the invoice autocomplete too
-            const recQ = query(collection(db, "recipients"), where("supplierId", "==", currentUser.uid));
-            const snap = await getDocs(recQ);
-            const list: Recipient[] = [];
-            snap.forEach(d => list.push({ id: d.id, ...d.data() } as Recipient));
-            setRecipientsList(list);
+            
+            const { data: recData } = await supabase.from('recipients').select('*').eq('supplierId', userId);
+            setRecipientsList((recData || []).map(d => ({ ...d } as Recipient)));
         } catch (err) {
             alert('Error adding recipient: ' + (err as Error).message);
         }
@@ -197,7 +202,8 @@ export default function SupplierDashboard() {
     const handleDeleteRecipient = async (id: string) => {
         if (!window.confirm('Delete this recipient?')) return;
         try {
-            await deleteDoc(doc(db, 'recipients', id));
+            const { error } = await supabase.from('recipients').delete().eq('id', id);
+            if (error) throw error;
             setRecipientsList(prev => prev.filter(r => r.id !== id));
         } catch (err) {
             alert('Error deleting recipient: ' + (err as Error).message);
@@ -211,15 +217,15 @@ export default function SupplierDashboard() {
             return;
         }
         try {
-            await addDoc(collection(db, 'products'), { ...productForm, supplierId: currentUser.uid });
+            const userId = currentUser.uid || currentUser.id;
+            const { error } = await supabase.from('products').insert({ ...productForm, supplierId: userId });
+            if (error) throw error;
+            
             setProductForm({ name: '', weightObs: '' });
             setShowAddProduct(false);
-            // Refresh the list used by the invoice autocomplete too
-            const prodQ = query(collection(db, "products"), where("supplierId", "==", currentUser.uid));
-            const snap = await getDocs(prodQ);
-            const list: Product[] = [];
-            snap.forEach(d => list.push({ id: d.id, ...d.data() } as Product));
-            setProductsList(list);
+            
+            const { data: prodData } = await supabase.from('products').select('*').eq('supplierId', userId);
+            setProductsList((prodData || []).map(d => ({ ...d } as Product)));
         } catch (err) {
             alert('Error adding product: ' + (err as Error).message);
         }
@@ -228,7 +234,8 @@ export default function SupplierDashboard() {
     const handleDeleteProduct = async (id: string) => {
         if (!window.confirm('Delete this product?')) return;
         try {
-            await deleteDoc(doc(db, 'products', id));
+            const { error } = await supabase.from('products').delete().eq('id', id);
+            if (error) throw error;
             setProductsList(prev => prev.filter(p => p.id !== id));
         } catch (err) {
             alert('Error deleting product: ' + (err as Error).message);
