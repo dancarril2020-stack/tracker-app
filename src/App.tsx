@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { db, collection, query, where, onSnapshot } from './firebase'; // Added imports
+import { supabase } from './supabase';
 import LoginScreen from './components/LoginScreen';
 import DeliveryForm from './components/DeliveryForm';
 import LoadingTab from './components/LoadingTab';
@@ -43,54 +43,56 @@ function AuthenticatedApp() {
   }, [userRole]);
 
   // --- BADGE LISTENER (DRIVER ONLY) ---
-  // Listen for assigned tasks in Firestore to update driver notification badges.
+  // Listen for assigned tasks in Supabase to update driver notification badges.
   useEffect(() => {
     if (userRole !== 'driver' || !currentUser) {
-      setBadges(prev => {
-        if (prev.deliveries === 0 && prev.pickups === 0 && prev.loads === 0) return prev;
-        return { deliveries: 0, pickups: 0, loads: 0 };
-      });
+      setBadges({ deliveries: 0, pickups: 0, loads: 0 });
       return;
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const recordsRef = collection(db, "records");
+    const userId = currentUser.id || currentUser.uid;
 
-    // 1. Pending Loads Badge (Now 'Assigned' Loads waiting for pickup? or Pending Deliveries?)
-    // Usually 'Loads' tab badge means "You have work to do (Load)".
-    // So we should count 'assigned_load'.
-    const qLoads = query(
-      recordsRef,
-      where("driverId", "==", currentUser.uid),
-      where("date", "==", today),
-      where("type", "==", "load"),
-      where("status", "==", "assigned_load"),
-      where("tenantId", "==", tenantId || 'default')
-    );
+    // Fetch initial counts
+    const fetchCounts = async () => {
+      const { count: loadsCount } = await supabase
+        .from('records')
+        .select('*', { count: 'exact', head: true })
+        .eq('driverId', userId)
+        .eq('date', today)
+        .eq('type', 'load')
+        .eq('status', 'assigned_load')
+        .eq('tenantId', tenantId || 'default');
 
-    // 2. Pending Pickups Badge
-    const qPickups = query(
-      recordsRef,
-      where("driverId", "==", currentUser.uid),
-      where("type", "==", "pickup"),
-      where("status", "==", "assigned"),
-      where("tenantId", "==", tenantId || 'default')
-    );
+      const { count: pickupsCount } = await supabase
+        .from('records')
+        .select('*', { count: 'exact', head: true })
+        .eq('driverId', userId)
+        .eq('type', 'pickup')
+        .eq('status', 'assigned')
+        .eq('tenantId', tenantId || 'default');
 
-    const unsubLoads = onSnapshot(qLoads, (snap) => {
-      setBadges(prev => ({ ...prev, loads: snap.size }));
-    });
+      setBadges(prev => ({ ...prev, loads: loadsCount || 0, pickups: pickupsCount || 0 }));
+    };
 
-    const unsubPickups = onSnapshot(qPickups, (snap) => {
-      setBadges(prev => ({ ...prev, pickups: snap.size }));
-    });
+    fetchCounts();
+
+    // Setup Supabase Realtime Subscription for badge updates
+    const channel = supabase.channel('badge-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'records', filter: `driverId=eq.${userId}` },
+        (payload) => {
+           // To keep it simple and perfectly synced, just refetch counts on any change to this driver's records
+           fetchCounts();
+        }
+      )
+      .subscribe();
 
     return () => {
-      unsubLoads();
-      unsubPickups();
+      supabase.removeChannel(channel);
     };
-  }, [userRole, currentUser]);
-
+  }, [userRole, currentUser, tenantId]);
 
   if (!currentUser) return <LoginScreen />;
 
@@ -226,7 +228,7 @@ function AuthenticatedApp() {
               </>
             )}
 
-            {/* Users Tab - Visible to Office/Backoffice (and Super Admin via separate logic if needed, but here simple role check works as Super Admin is backoffice) */}
+            {/* Users Tab - Visible to Office/Backoffice */}
             {(userRole === 'office' || userRole === 'backoffice') && (
               <button
                 className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
@@ -236,7 +238,7 @@ function AuthenticatedApp() {
               </button>
             )}
 
-            {/* Audit Tab - Backoffice Only (but NOT Super Admin, unless they want it) */}
+            {/* Audit Tab - Backoffice Only */}
             {userRole === 'backoffice' && !isSuperAdmin && (
               <button
                 className={`tab-button ${activeTab === 'audit' ? 'active' : ''}`}

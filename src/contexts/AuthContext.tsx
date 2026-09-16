@@ -1,23 +1,11 @@
 /**
  * AuthContext.tsx
  * Purpose: Provides authentication state (current user, role, tenantId) throughout the application.
- * Manages login/logout, session timers, and enforces role-based access rules.
+ * Manages login/logout, session timers, and enforces role-based access rules via Supabase.
  */
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
-import {
-    auth,
-    db,
-    signInWithEmailAndPassword,
-    signOut,
-    onAuthStateChanged,
-    createUserWithEmailAndPassword,
-    doc,
-    getDoc,
-    setDoc,
-    sendPasswordResetEmail
-} from '../firebase';
-
+import { supabase } from '../supabase';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -31,90 +19,128 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [userRole, setUserRole] = useState<string | null>(null); // 'driver', 'office', 'backoffice'
-    const [tenantId, setTenantId] = useState<string | null>(null); // Multi-tenant support
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [tenantId, setTenantId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     function isWithinWorkHours() {
         return true; // Always allow access for testing
     }
 
-    function login(email: string, password: string): Promise<any> {
-        return signInWithEmailAndPassword(auth, email, password);
+    async function login(email: string, password: string): Promise<any> {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        return data;
     }
 
-    function logout() {
-        return signOut(auth);
+    async function logout() {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
     }
 
-    /**
-     * Sends a password reset email to the specified address.
-     * Uses the default Firebase Auth email templates.
-     */
-    function resetPassword(email: string): Promise<void> {
-        return sendPasswordResetEmail(auth, email);
+    async function resetPassword(email: string): Promise<void> {
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        if (error) throw error;
     }
 
-    // Admin function to create users (Place in dedicated Admin context later or keep here if simple)
+    // Admin function to create users. 
+    // In Supabase, creating a secondary user from the client while logged in requires admin rights or an Edge Function.
+    // We will leave this signature here for compatibility with UserManagement.
     async function registerUser(email: string, password: string, role: string, name: string): Promise<void> {
-        // Note: Creating a secondary user while logged in is tricky in Firebase client SDK
-        // Usually requires a secondary Admin App or Cloud Function.
-        // For this demo, we might simulated it or require re-auth. 
-        // We will stick to the architecture plan but noting this constraint.
-        const res = await createUserWithEmailAndPassword(auth, email, password);
-        await setDoc(doc(db, "users", res.user.uid), {
+        const { data, error } = await supabase.auth.signUp({
             email,
-            role,
-            name,
-            createdAt: new Date().toISOString()
+            password,
         });
+        if (error) throw error;
+
+        if (data.user) {
+            const { error: dbError } = await supabase.from('users').insert({
+                id: data.user.id,
+                email,
+                name,
+                role,
+                tenantId: 'default' // This will be overwritten by UserManagement's own registerUser implementation later
+            });
+            if (dbError) throw dbError;
+        }
     }
 
-    // Listen to Firebase Auth state changes.
-    // Fetches user role, tenantId, and enforces active status/time constraints.
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                // Fetch Role
-                const docRef = doc(db, "users", user.uid);
-                const docSnap = await getDoc(docRef);
+        let isMounted = true;
 
-                if (docSnap.exists()) {
-                    const userData = docSnap.data();
-                    setUserRole(userData.role);
-                    setTenantId(userData.tenantId || 'default'); // fallback for existing users
+        async function fetchUserProfile(userId: string, authUser: any) {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', userId)
+                .single();
 
-                    // Role-based Time Check
-                    if (userData.role === 'driver' && !isWithinWorkHours()) {
-                        await logout();
-                        alert("Session Locked: Access is allowed only between 08:00 and 20:30.");
-                        setCurrentUser(null);
-                        setUserRole(null);
-                        setTenantId(null);
-                    }
-                    // ENFORCE ACTIVE STATUS (Soft Delete)
-                    else if (userData.active === false) {
-                        await logout();
-                        alert("Access Denied: Your account has been deactivated. Please contact your administrator.");
-                        setCurrentUser(null);
-                        setUserRole(null);
-                        setTenantId(null);
-                    }
-                    else {
-                        setCurrentUser({ ...user, ...userData } as User);
-                    }
-                } else {
-                    // Fallback if user has no doc (shouldn't happen in production)
-                    setCurrentUser(user as unknown as User);
+            if (error) {
+                console.error("Error fetching user profile:", error);
+                if (isMounted) {
+                    setCurrentUser(authUser as unknown as User);
+                    setLoading(false);
                 }
-            } else {
-                setCurrentUser(null);
-                setUserRole(null);
+                return;
             }
-            setLoading(false);
+
+            if (data && isMounted) {
+                setUserRole(data.role);
+                setTenantId(data.tenantId || 'default');
+
+                // Role-based Time Check
+                if (data.role === 'driver' && !isWithinWorkHours()) {
+                    await logout();
+                    alert("Session Locked: Access is allowed only between 08:00 and 20:30.");
+                    setCurrentUser(null);
+                    setUserRole(null);
+                    setTenantId(null);
+                }
+                // ENFORCE ACTIVE STATUS (Soft Delete)
+                else if (data.active === false) {
+                    await logout();
+                    alert("Access Denied: Your account has been deactivated.");
+                    setCurrentUser(null);
+                    setUserRole(null);
+                    setTenantId(null);
+                }
+                else {
+                    setCurrentUser({ ...authUser, ...data } as User);
+                }
+            }
+            if (isMounted) setLoading(false);
+        }
+
+        // Check initial session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                fetchUserProfile(session.user.id, session.user);
+            } else {
+                if (isMounted) {
+                    setCurrentUser(null);
+                    setLoading(false);
+                }
+            }
         });
 
-        return unsubscribe;
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (session?.user) {
+                fetchUserProfile(session.user.id, session.user);
+            } else {
+                if (isMounted) {
+                    setCurrentUser(null);
+                    setUserRole(null);
+                    setTenantId(null);
+                    setLoading(false);
+                }
+            }
+        });
+
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     // Periodic Time Checker for active sessions

@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react';
 import { RecordItem, User } from '../types';
-import { db, collection, addDoc, query, where, getDocs, updateDoc, doc, getUsersByTenant } from '../firebase';
+import { supabase, getUsersByTenant } from '../supabase';
 import { logAction, ACTIONS } from '../utils/audit';
 import { getCurrentSession } from '../utils/sessionHelper';
 import ScannerModal from './ScannerModal';
@@ -70,30 +70,19 @@ export default function DeliveryForm() {
         setLoading(true);
         try {
             const today = new Date().toISOString().split('T')[0];
-            let q;
+            let q = supabase.from('records').select('*').eq('driverId', currentUser.uid || currentUser.id).eq('tenantId', tenantId || 'default');
+
             if (activeSession.startsWith('recogida_')) {
-                q = query(
-                    collection(db, "records"),
-                    where("driverId", "==", currentUser.uid),
-                    where("status", "==", "picked_up_supplier"),
-                    where("tenantId", "==", tenantId || 'default')
-                );
+                q = q.eq('status', 'picked_up_supplier');
             } else {
-                q = query(
-                    collection(db, "records"),
-                    where("driverId", "==", currentUser.uid),
-                    where("date", "==", today),
-                    where("type", "==", "load"),
-                    where("status", "==", "pending"),
-                    where("tenantId", "==", tenantId || 'default')
-                );
+                q = q.eq('date', today).eq('type', 'load').eq('status', 'pending');
             }
-            const snapshot = await getDocs(q);
-            const data = snapshot.docs ? snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) })) : [];
-            // Sort by creation time (newest first)
-            data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            console.log("DEBUG_FETCHED_LOADS", JSON.stringify(data.map(d => ({ id: d.id, status: d.status, session: d.session, recipient: d.recipient, type: d.type, driverId: d.driverId }))));
-            setPendingLoads(data);
+            
+            const { data, error } = await q.order('createdAt', { ascending: false });
+            if (error) throw error;
+
+            const records = (data || []).map(d => ({ ...d } as RecordItem));
+            setPendingLoads(records);
         } catch (err) {
             console.error("Error fetching pending loads:", err);
         }
@@ -149,9 +138,9 @@ export default function DeliveryForm() {
             // So if I create a new record of type 'delivery_failed', it WILL be fetched and shown in the list.
             // And the original LOAD will updated.
 
-            await addDoc(collection(db, "records"), {
+            const { error: insertError } = await supabase.from('records').insert({
                 type: 'delivery_failed',
-                driverId: currentUser.uid,
+                driverId: currentUser.uid || currentUser.id,
                 driverName: currentUser.name || currentUser.email,
                 recipient: failingLoad.recipient,
                 remittance: failingLoad.remittance,
@@ -167,15 +156,14 @@ export default function DeliveryForm() {
                 address: failingLoad.address || '',
                 tenantId: failingLoad.tenantId || tenantId || 'default'
             });
+            if (insertError) throw insertError;
 
             // 2. Update the Original Load Record
-            // We want it to be "removed" from the pending list (which queries status=='pending').
-            // We should mark it as 'processed_failed' or similar so it doesn't show up again as pending.
-            // Inherently, it shouldn't show up in the "Pending" list if status != pending.
-            await updateDoc(doc(db, "records", failingLoad.id), {
-                status: 'delivery_failed', // This removes it from pending list query
+            const { error: updateError } = await supabase.from('records').update({
+                status: 'delivery_failed',
                 failedAt: new Date().toISOString()
-            });
+            }).eq('id', failingLoad.id);
+            if (updateError) throw updateError;
 
             // Log Audit
             await logAction(currentUser, ACTIONS.DELIVERY_FAILED, `Delivery Failed for ${failingLoad.recipient}: ${failureReason}`, failingLoad.id);
@@ -211,7 +199,8 @@ export default function DeliveryForm() {
                     updates.type = 'load';
                 }
 
-                await updateDoc(doc(db, "records", load.id), updates);
+                const { error: updateError } = await supabase.from('records').update(updates).eq('id', load.id);
+                if (updateError) throw updateError;
                 await logAction(currentUser, ACTIONS.UPDATE, `Unloaded supplier package at warehouse: ${load.recipient}`, load.id);
                 fetchPendingLoads();
                 setLoading(false);
@@ -237,7 +226,7 @@ export default function DeliveryForm() {
                 ? (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || 'Unknown')
                 : (currentUser.name || currentUser.email || 'Unknown');
 
-            const deliveryRef = await addDoc(collection(db, "records"), {
+            const { data: deliveryData, error: deliveryError } = await supabase.from('records').insert({
                 type: 'delivery',
                 driverId: targetId,
                 driverName: targetName,
@@ -255,47 +244,48 @@ export default function DeliveryForm() {
                 address: load.address || '',
                 observations: cardObservations[load.id] || '',
                 tenantId: load.tenantId || tenantId || 'default',
-                // Preserve supplier info so it shows on delivered card
                 supplierName: load.supplierName || '',
                 supplierReference: load.supplierReference || ''
-            });
+            }).select('id').single();
+            
+            if (deliveryError) throw deliveryError;
+            const deliveryId = deliveryData.id;
 
             // 1.5 Check for Debt (Shortfall)
-            // Parse values safely
             const expectedVal = parseFloat((load.reembolso || "0").toString().replace(',', '.'));
             const collectedVal = parseFloat((collectedValue || "0").toString().replace(',', '.'));
 
             if (!isNaN(expectedVal) && expectedVal > 0) {
                 const shortfall = expectedVal - (isNaN(collectedVal) ? 0 : collectedVal);
 
-                // Tolerance for floating point (e.g. 0.01)
                 if (shortfall > 0.05) {
-                    // Create Debt Record
-                    await addDoc(collection(db, "debts"), {
+                    const { error: debtError } = await supabase.from('debts').insert({
                         recipient: load.recipient,
                         remittance: load.remittance,
                         amount: shortfall.toFixed(2),
                         originalLoadId: load.id,
-                        deliveryId: deliveryRef.id,
-                        driverId: currentUser.uid,
+                        deliveryId: deliveryId,
+                        driverId: currentUser.uid || currentUser.id,
                         driverName: currentUser.name || currentUser.email,
                         date: today,
                         createdAt: new Date().toISOString(),
                         tenantId: tenantId || 'default',
                         status: 'pending'
                     });
+                    if (debtError) throw debtError;
 
                     await logAction(currentUser, ACTIONS.UPDATE, `Debt Created: €${shortfall.toFixed(2)} for ${load.recipient}`, load.id);
                 }
             }
 
             // 2. Update Load Record status
-            await updateDoc(doc(db, "records", load.id), {
+            const { error: loadUpdateError } = await supabase.from('records').update({
                 status: 'delivered',
                 deliveredQuantity: load.quantity
-            });
+            }).eq('id', load.id);
+            if (loadUpdateError) throw loadUpdateError;
 
-            await logAction(currentUser, ACTIONS.DELIVER_ITEM, `Delivered ${load.quantity} units to ${load.recipient}`, deliveryRef.id);
+            await logAction(currentUser, ACTIONS.DELIVER_ITEM, `Delivered ${load.quantity} units to ${load.recipient}`, deliveryId);
 
             // Refresh list
             fetchPendingLoads();
@@ -337,9 +327,9 @@ export default function DeliveryForm() {
         setLoading(true);
         try {
             // 1. Save Delivery Record
-            const deliveryRef = await addDoc(collection(db, "records"), {
+            const { data: deliveryData, error: deliveryError } = await supabase.from('records').insert({
                 type: 'delivery',
-                driverId: ((userRole === 'office' || userRole === 'backoffice') && selectedDriver) ? selectedDriver : currentUser.uid,
+                driverId: ((userRole === 'office' || userRole === 'backoffice') && selectedDriver) ? selectedDriver : (currentUser.uid || currentUser.id),
                 driverName: ((userRole === 'office' || userRole === 'backoffice') && selectedDriver) ?
                     (drivers.find(d => d.uid === selectedDriver)?.name || drivers.find(d => d.uid === selectedDriver)?.email || currentUser.email)
                     : (currentUser.name || currentUser.email),
@@ -349,43 +339,40 @@ export default function DeliveryForm() {
                 tenantId: tenantId || 'default',
                 createdAt: new Date().toISOString(),
                 date: new Date().toISOString().split('T')[0]
-            });
+            }).select('id').single();
+            if (deliveryError) throw deliveryError;
 
-            await logAction(currentUser, ACTIONS.DELIVER_ITEM, `Manual Delivery registered for ${formData.recipient}`, deliveryRef.id);
+            await logAction(currentUser, ACTIONS.DELIVER_ITEM, `Manual Delivery registered for ${formData.recipient}`, deliveryData.id);
 
             // 2. Auto-Link: Find and update 'Load' record to 'Delivered'
-            // We search for a 'load' with the same remittance code created today (or recently)
-            const q = query(
-                collection(db, "records"),
-                where("remittance", "==", formData.remittance),
-                where("recipient", "==", formData.recipient),
-                where("type", "==", "load")
-            );
-            const querySnapshot = await getDocs(q);
+            const { data: linkedLoads, error: loadError } = await supabase.from('records')
+                .select('*')
+                .eq('remittance', formData.remittance)
+                .eq('recipient', formData.recipient)
+                .eq('type', 'load');
+            
+            if (loadError) throw loadError;
 
-            if (querySnapshot.docs) {
-                for (const docSnap of querySnapshot.docs) {
-                    const loadData = docSnap.data();
+            if (linkedLoads && linkedLoads.length > 0) {
+                for (const loadData of linkedLoads) {
                     const loadQty = Number(loadData.quantity || 0);
 
-                    // Accumulate quantity if there were previous partial deliveries
                     const previousDelivered = Number(loadData.deliveredQuantity || 0);
                     const currentDeliveryQty = Number(formData.quantity || 0);
                     const totalDelivered = previousDelivered + currentDeliveryQty;
 
                     let newStatus = 'delivered';
                     if (totalDelivered < loadQty) {
-                        newStatus = 'incident_missing'; // Still missing some items
+                        newStatus = 'incident_missing'; 
                     } else if (totalDelivered > loadQty) {
                         newStatus = 'incident_excess';
                     }
 
-                    const loadRef = doc(db, "records", docSnap.id);
-                    await updateDoc(loadRef, {
+                    await supabase.from('records').update({
                         status: newStatus,
                         linkedDeliveryTime: new Date().toISOString(),
                         deliveredQuantity: totalDelivered
-                    });
+                    }).eq('id', loadData.id);
                 }
             }
 

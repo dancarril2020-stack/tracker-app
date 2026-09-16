@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { RecordItem, User } from '../types';
-import { db, collection, query, where, getDocs, deleteDoc, doc, getUsersByTenant, updateDoc, setDoc } from '../firebase';
+import { supabase, getUsersByTenant } from '../supabase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 import { generateCSV, parseCSV } from '../utils/csvHelper'; // Import CSV helper
 import { jsPDF } from 'jspdf';
@@ -51,33 +51,24 @@ export default function DeliverySummary() {
     async function fetchRecords() {
         setLoading(true);
         try {
-            const recordsRef = collection(db, "records");
-            let q;
+            let query = supabase.from('records')
+                .select('*')
+                .eq('date', summaryDate)
+                .eq('tenantId', tenantId || 'default');
 
-            // Role Logic: Office sees all (or filtered). Driver sees only their own.
             if (userRole === 'office' || userRole === 'backoffice') {
-                const constraints = [
-                    where("date", "==", summaryDate),
-                    where("tenantId", "==", tenantId || 'default')
-                ];
-
                 if (selectedDriver !== 'all') {
-                    constraints.push(where("driverId", "==", selectedDriver));
+                    query = query.eq('driverId', selectedDriver);
                 }
-
-                q = query(recordsRef, ...constraints);
             } else {
                 if (!currentUser) return;
-                q = query(
-                    recordsRef,
-                    where("date", "==", summaryDate),
-                    where("driverId", "==", currentUser.uid),
-                    where("tenantId", "==", tenantId || 'default')
-                );
+                query = query.eq('driverId', currentUser.uid || currentUser.id);
             }
 
-            const snapshot = await getDocs(q);
-            let data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<RecordItem, 'id'>) }));
+            const { data: fetchedData, error } = await query;
+            if (error) throw error;
+
+            let data = (fetchedData || []).map(d => ({ ...d } as RecordItem));
 
             // Remove inbound supplier requests - these belong in the Inbound tab
             data = data.filter(r => r.status !== 'supplier_submitted' && r.status !== 'picked_up_supplier');
@@ -100,17 +91,16 @@ export default function DeliverySummary() {
         try {
             // 1. Revert Load Status if deleting a Delivery
             if (record.type === 'delivery') {
-                const q = query(
-                    collection(db, "records"),
-                    where("type", "==", "load"),
-                    where("remittance", "==", record.remittance),
-                    where("recipient", "==", record.recipient),
-                    where("tenantId", "==", tenantId || 'default')
-                );
-                const snapshot = await getDocs(q);
+                const { data: loads, error: fetchError } = await supabase.from('records')
+                    .select('*')
+                    .eq('type', 'load')
+                    .eq('remittance', record.remittance)
+                    .eq('recipient', record.recipient)
+                    .eq('tenantId', tenantId || 'default');
 
-                for (const docSnap of snapshot.docs) {
-                    const load = docSnap.data();
+                if (fetchError) throw fetchError;
+
+                for (const load of loads || []) {
                     const currentDelivered = Number(load.deliveredQuantity || 0);
                     const quantityRestored = Number(record.quantity || 0);
 
@@ -121,20 +111,22 @@ export default function DeliverySummary() {
                     if (newDelivered > 0 && newDelivered < Number(load.quantity)) {
                         newStatus = 'incident_missing';
                     } else if (newDelivered >= Number(load.quantity)) {
-                        // Should not happen unless there are other deliveries, but keep it safe
                         newStatus = 'delivered';
                     }
 
-                    await updateDoc(doc(db, "records", docSnap.id), {
+                    const { error: updateError } = await supabase.from('records').update({
                         deliveredQuantity: newDelivered,
                         status: newStatus,
-                        linkedDeliveryTime: null // Clear link if full revert? Or keep last? Safe to clear or just leave.
-                    });
+                        linkedDeliveryTime: null
+                    }).eq('id', load.id);
+
+                    if (updateError) throw updateError;
                 }
             }
 
             // 2. Delete the Record
-            await deleteDoc(doc(db, "records", record.id));
+            const { error: deleteError } = await supabase.from('records').delete().eq('id', record.id);
+            if (deleteError) throw deleteError;
 
             // 3. Log Audit
             const actionType = record.type === 'load' ? ACTIONS.DELETE_LOAD : ACTIONS.DELETE_DELIVERY;
@@ -189,14 +181,16 @@ export default function DeliverySummary() {
 
                 setLoading(true);
                 let count = 0;
+                
+                // Group records to perform bulk upsert or do it iteratively
                 for (const record of (parsedRecords as RecordItem[])) {
                     if (record.id) {
-                        // Ensure we restore to the 'records' collection
-                        // Convert empty strings for numbers if necessary, but string is usually safe for storage if app handles checks
-                        // Ideally we should sanitize/validate date? Assuming trusted source.
-                        const docRef = doc(db, "records", record.id);
-                        await setDoc(docRef, record, { merge: true });
-                        count++;
+                        const { error } = await supabase.from('records').upsert(record);
+                        if (error) {
+                            console.error(`Error importing record ${record.id}:`, error);
+                        } else {
+                            count++;
+                        }
                     }
                 }
                 alert(`Successfully imported ${count} records.`);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { db, doc, updateDoc, arrayUnion, query, collection, where, getDocs } from '../firebase';
+import { supabase } from '../supabase';
 import { logAction, ACTIONS } from '../utils/audit'; // Import audit
 
 import { useAuth } from '../contexts/AuthContext';
@@ -49,8 +49,6 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
         e.preventDefault();
         setLoading(true);
         try {
-            const recordRef = doc(db, "records", record.id);
-
             // --- DIFF LOGIC FOR AUDIT ---
             const fieldsToTrack = {
                 recipient: 'Recipient',
@@ -94,8 +92,10 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
             };
 
             // Update Document
-            await updateDoc(recordRef, {
-                // ... fields ...
+            const existingHistory = Array.isArray(record.auditHistory) ? record.auditHistory : [];
+            const newHistory = [...existingHistory, changeLog];
+
+            const { error: updateError } = await supabase.from('records').update({
                 recipient: formData.recipient || '',
                 remittance: formData.remittance || '',
                 quantity: formData.quantity || 0,
@@ -105,8 +105,9 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
                 address: formData.address || '',
                 observations: formData.observations || '',
                 collectedValue: formData.collectedValue || '',
-                auditHistory: arrayUnion(changeLog)
-            });
+                auditHistory: newHistory
+            }).eq('id', record.id);
+            if (updateError) throw updateError;
 
             // LOG AUDIT (Detailed)
             const actionType = record.type === 'load' ? ACTIONS.EDIT_LOAD : ACTIONS.EDIT_DELIVERY;
@@ -122,39 +123,26 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
 
             // Case A: Editing a DELIVERY -> Update the linked LOAD
             if (record.type === 'delivery') {
-                // If identifiers changed, we need to update TWO sets of loads:
-                // 1. The OLD ones (matching record.remittance/recipient) - they lost this delivery
-                // 2. The NEW ones (matching formData.remittance/recipient) - they gained/updated this delivery
-
                 const identifiersChanged = record.remittance !== formData.remittance || record.recipient !== formData.recipient;
 
                 const updateLoadCascade = async (remittance: string | undefined, recipient: string | undefined) => {
-                    const q = query(
-                        collection(db, "records"),
-                        where("type", "==", "load"),
-                        where("remittance", "==", remittance),
-                        where("recipient", "==", recipient),
-                        where("driverId", "==", record.driverId)
-                    );
-                    const snapshot = await getDocs(q);
+                    const { data: loads } = await supabase.from('records')
+                        .select('*')
+                        .eq('type', 'load')
+                        .eq('remittance', remittance)
+                        .eq('recipient', recipient)
+                        .eq('driverId', record.driverId);
 
-                    for (const docSnap of snapshot.docs) {
-                        const loadData = docSnap.data();
+                    for (const loadData of loads || []) {
+                        const { data: deliveries } = await supabase.from('records')
+                            .select('*')
+                            .eq('type', 'delivery')
+                            .eq('remittance', remittance)
+                            .eq('recipient', recipient);
 
-                        // Re-calculate deliveredQuantity for this load by summing ALL deliveries with these identifiers
-                        const qD = query(
-                            collection(db, "records"),
-                            where("type", "==", "delivery"),
-                            where("remittance", "==", remittance),
-                            where("recipient", "==", recipient)
-                        );
-                        const deliverySnap = await getDocs(qD);
                         let totalDelivered = 0;
-                        deliverySnap.docs.forEach(d => {
-                            const data = d.data();
-                            // If this is the record we are CURRENTLY editing, use new quantity. 
-                            // Others use their stored quantity.
-                            const qty = (d.id === record.id) ? Number(formData.quantity || 0) : Number(data.quantity || 0);
+                        (deliveries || []).forEach(d => {
+                            const qty = (d.id === record.id) ? Number(formData.quantity || 0) : Number(d.quantity || 0);
                             totalDelivered += qty;
                         });
 
@@ -166,10 +154,10 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
                         else if (totalDelivered < loadQty) newStatus = 'incident_missing';
                         else if (totalDelivered > loadQty) newStatus = 'incident_excess';
 
-                        await updateDoc(doc(db, "records", docSnap.id), {
+                        await supabase.from('records').update({
                             deliveredQuantity: totalDelivered,
                             status: newStatus
-                        });
+                        }).eq('id', loadData.id);
                     }
                 };
 
@@ -184,17 +172,16 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
 
             // Case B: Editing a LOAD -> Update ITSELF based on existing deliveries
             if (record.type === 'load') {
-                const deliveriesQ = query(
-                    collection(db, "records"),
-                    where("remittance", "==", formData.remittance),
-                    where("recipient", "==", formData.recipient),
-                    where("type", "==", "delivery"),
-                    where("driverId", "==", record.driverId),
-                    where("date", "==", record.date) // Scope to same day
-                );
-                const deliveriesSnap = await getDocs(deliveriesQ);
+                const { data: deliveries } = await supabase.from('records')
+                    .select('*')
+                    .eq('remittance', formData.remittance)
+                    .eq('recipient', formData.recipient)
+                    .eq('type', 'delivery')
+                    .eq('driverId', record.driverId)
+                    .eq('date', record.date);
+
                 let totalDelivered = 0;
-                deliveriesSnap.forEach(d => totalDelivered += Number(d.data().quantity || 0));
+                (deliveries || []).forEach(d => totalDelivered += Number(d.quantity || 0));
 
                 let newStatus = 'delivered';
                 // Note: newQty here is the NEW load quantity we just typed
@@ -206,10 +193,10 @@ export default function EditModal({ record, onClose, onUpdate }: { record: Recor
                 else if (totalDelivered > newQty) newStatus = 'incident_excess';
 
                 // Update the load's own status/deliveredQty (since we already updated other fields above)
-                await updateDoc(recordRef, {
+                await supabase.from('records').update({
                     status: newStatus,
                     deliveredQuantity: totalDelivered
-                });
+                }).eq('id', record.id);
             }
 
 
